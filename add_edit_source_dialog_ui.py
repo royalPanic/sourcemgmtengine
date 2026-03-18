@@ -16,14 +16,15 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
-    QDialogButtonBox, QFormLayout, QLabel, QLineEdit,
+    QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QSizePolicy, QVBoxLayout, QWidget)
 
 class Ui_SourceDialog(object):
     def setupUi(self, SourceDialog):
         if not SourceDialog.objectName():
             SourceDialog.setObjectName(u"SourceDialog")
-        SourceDialog.resize(450, 350)
+        SourceDialog.resize(450, 450)
         self.verticalLayout = QVBoxLayout(SourceDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.formLayout = QFormLayout()
@@ -79,10 +80,40 @@ class Ui_SourceDialog(object):
 
         self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.label_5)
 
-        self.txtSourceTags = QLineEdit(SourceDialog)
-        self.txtSourceTags.setObjectName(u"txtSourceTags")
+        self.tagInputLayout = QHBoxLayout()
+        self.tagInputLayout.setObjectName(u"tagInputLayout")
+        self.cboTagInput = QComboBox(SourceDialog)
+        self.cboTagInput.setObjectName(u"cboTagInput")
+        self.cboTagInput.setEditable(True)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(1)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.cboTagInput.sizePolicy().hasHeightForWidth())
+        self.cboTagInput.setSizePolicy(sizePolicy)
 
-        self.formLayout.setWidget(4, QFormLayout.ItemRole.FieldRole, self.txtSourceTags)
+        self.tagInputLayout.addWidget(self.cboTagInput)
+
+        self.btnAddTag = QPushButton(SourceDialog)
+        self.btnAddTag.setObjectName(u"btnAddTag")
+
+        self.tagInputLayout.addWidget(self.btnAddTag)
+
+        self.formLayout.setLayout(4, QFormLayout.ItemRole.FieldRole, self.tagInputLayout)
+
+        self.tagListLayout = QHBoxLayout()
+        self.tagListLayout.setObjectName(u"tagListLayout")
+        self.listTags = QListWidget(SourceDialog)
+        self.listTags.setObjectName(u"listTags")
+        self.listTags.setMaximumSize(QSize(16777215, 100))
+
+        self.tagListLayout.addWidget(self.listTags)
+
+        self.btnRemoveTag = QPushButton(SourceDialog)
+        self.btnRemoveTag.setObjectName(u"btnRemoveTag")
+
+        self.tagListLayout.addWidget(self.btnRemoveTag)
+
+        self.formLayout.setLayout(5, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
 
 
         self.verticalLayout.addLayout(self.formLayout)
@@ -115,6 +146,8 @@ class Ui_SourceDialog(object):
         self.label_3.setText(QCoreApplication.translate("SourceDialog", u"Reliability:", None))
         self.label_4.setText(QCoreApplication.translate("SourceDialog", u"Credibility:", None))
         self.label_5.setText(QCoreApplication.translate("SourceDialog", u"Tags:", None))
-        self.txtSourceTags.setPlaceholderText(QCoreApplication.translate("SourceDialog", u"Enter comma-separated tags...", None))
+        self.cboTagInput.lineEdit().setPlaceholderText(QCoreApplication.translate("SourceDialog", u"Select or type a new tag...", None))
+        self.btnAddTag.setText(QCoreApplication.translate("SourceDialog", u"Add Tag", None))
+        self.btnRemoveTag.setText(QCoreApplication.translate("SourceDialog", u"Remove", None))
     # retranslateUi
 

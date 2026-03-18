@@ -56,7 +56,7 @@ class EditTopicDialog(QDialog, Ui_EditTopicDialog):
                 self.dtEditEventDate.dateTime().toString(Qt.ISODate))
 
 class SourceDialog(QDialog, Ui_SourceDialog):
-    def __init__(self, source_data=None, parent=None):
+    def __init__(self, source_data=None, existing_tags=None, parent=None):
         super().__init__(parent)
         self.setupUi(self)
 
@@ -64,36 +64,66 @@ class SourceDialog(QDialog, Ui_SourceDialog):
         self.cboReliability.addItems(RELIABILITY_MAP.keys())
         self.cboCredibility.addItems(CREDIBILITY_MAP.keys())
 
+        # Populate the tag combo box with existing tags from the database
+        if existing_tags:
+            self.cboTagInput.addItems(existing_tags)
+        self.cboTagInput.setCurrentText("")
+
+        # Connect tag buttons
+        self.btnAddTag.clicked.connect(self.handle_add_tag)
+        self.btnRemoveTag.clicked.connect(self.handle_remove_tag)
+
         if source_data:
             _, uri, type, reliability, credibility, metadata_str = source_data
             self.txtSourceURI.setText(uri)
             self.cboSourceType.setCurrentText(type)
             self.cboReliability.setCurrentText(RELIABILITY_MAP_REV.get(reliability, "F: Cannot be judged"))
             self.cboCredibility.setCurrentText(CREDIBILITY_MAP_REV.get(credibility, "6: Cannot be judged"))
-            
-            # Load tags from JSON
+
+            # Load tags from JSON into the list widget
             try:
                 metadata = json.loads(metadata_str)
-                tags = metadata.get("tags", [])
-                self.txtSourceTags.setText(", ".join(tags))
+                for tag in metadata.get("tags", []):
+                    if tag.strip():
+                        self.listTags.addItem(tag.strip())
             except (json.JSONDecodeError, TypeError):
-                self.txtSourceTags.setText("") # Clear if metadata is invalid
+                pass
+
+    def handle_add_tag(self):
+        tag = self.cboTagInput.currentText().strip()
+        if not tag:
+            return
+        # Prevent duplicate tags
+        for i in range(self.listTags.count()):
+            if self.listTags.item(i).text() == tag:
+                return
+        self.listTags.addItem(tag)
+        # Add new tag to the combo box dropdown if it's not already there
+        if self.cboTagInput.findText(tag) == -1:
+            self.cboTagInput.addItem(tag)
+        self.cboTagInput.setCurrentText("")
+
+    def handle_remove_tag(self):
+        current_item = self.listTags.currentItem()
+        if current_item:
+            self.listTags.takeItem(self.listTags.row(current_item))
 
     def get_data(self):
         uri = self.txtSourceURI.text().strip()
         source_type = self.cboSourceType.currentText()
         reliability = RELIABILITY_MAP[self.cboReliability.currentText()]
         credibility = CREDIBILITY_MAP[self.cboCredibility.currentText()]
-        
-        # Parse tags into a JSON string
-        tags_text = self.txtSourceTags.text().strip()
-        tags = [tag.strip() for tag in tags_text.split(',') if tag.strip()]
+
+        # Collect tags from the list widget
+        tags = []
+        for i in range(self.listTags.count()):
+            tags.append(self.listTags.item(i).text())
         metadata = {"tags": tags}
-        
+
         if not uri:
             QMessageBox.warning(self, "Input Error", "The URI / Info field cannot be empty.")
             return None
-            
+
         return uri, source_type, reliability, credibility, json.dumps(metadata)
 
 class SourceEngineApp(QMainWindow, Ui_MainWindow):
@@ -206,7 +236,7 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         self.tableSources.setRowCount(len(sources))
 
         for row, source in enumerate(sources):
-            source_id, uri, type, reliability, credibility, _ = source
+            source_id, uri, type, reliability, credibility, metadata_str = source
             
             uri_item = QTableWidgetItem(uri)
             uri_item.setData(Qt.UserRole, source_id)
@@ -216,11 +246,20 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
             self.tableSources.setItem(row, 2, QTableWidgetItem(RELIABILITY_MAP_REV.get(reliability)))
             self.tableSources.setItem(row, 3, QTableWidgetItem(CREDIBILITY_MAP_REV.get(credibility)))
 
+            # Display tags in the Tags column
+            tags_display = ""
+            try:
+                metadata = json.loads(metadata_str)
+                tags_display = ", ".join(metadata.get("tags", []))
+            except (json.JSONDecodeError, TypeError):
+                pass
+            self.tableSources.setItem(row, 4, QTableWidgetItem(tags_display))
+
     def handle_add_source(self):
         topic_id, _, _, _ = self.get_selected_topic_info()
         if not topic_id: return
         
-        dialog = SourceDialog(parent=self)
+        dialog = SourceDialog(existing_tags=self.db.get_all_tags(), parent=self)
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:
@@ -238,7 +277,7 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         source_data = next((s for s in sources if s[0] == source_id), None)
         if not source_data: return
 
-        dialog = SourceDialog(source_data=source_data, parent=self)
+        dialog = SourceDialog(source_data=source_data, existing_tags=self.db.get_all_tags(), parent=self)
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:

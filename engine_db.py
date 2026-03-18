@@ -105,6 +105,21 @@ class SourceManagerDB:
         """, (uri, source_type, reliability, credibility, metadata, source_id))
         self.conn.commit()
 
+    def get_all_tags(self):
+        """Return a sorted list of all unique tags used across all sources."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT metadata FROM sources WHERE metadata IS NOT NULL")
+        all_tags = set()
+        for (metadata_str,) in cursor.fetchall():
+            try:
+                metadata = json.loads(metadata_str)
+                for tag in metadata.get("tags", []):
+                    if tag.strip():
+                        all_tags.add(tag.strip())
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return sorted(all_tags)
+
     def delete_source(self, source_id):
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM sources WHERE id = ?", (source_id,))
