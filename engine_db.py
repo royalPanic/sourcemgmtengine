@@ -1,0 +1,111 @@
+import sqlite3
+import json
+import datetime
+
+class SourceManagerDB:
+    def __init__(self, db_name="engine_data.db"):
+        self.conn = sqlite3.connect(db_name)
+        # Enable foreign key support for cascading deletes
+        self.conn.execute("PRAGMA foreign_keys = ON;")
+        self._create_tables()
+        self._update_schema()
+
+    def _create_tables(self):
+        query = """
+        CREATE TABLE IF NOT EXISTS topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic_id INTEGER,
+            uri TEXT,
+            type TEXT,
+            reliability INTEGER, -- NATO A-F (mapped to 5-0)
+            credibility INTEGER, -- NATO 1-6 (mapped to 5-0)
+            metadata TEXT,       -- Store arbitrary data as JSON
+            FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE
+        );
+        """
+        self.conn.executescript(query)
+
+    def _update_schema(self):
+        cursor = self.conn.cursor()
+        cursor.execute("PRAGMA table_info(topics)")
+        columns = [info[1] for info in cursor.fetchall()]
+
+        if 'group_name' not in columns:
+            cursor.execute("ALTER TABLE topics ADD COLUMN group_name TEXT DEFAULT 'Uncategorized'")
+        
+        if 'creation_date' in columns:
+            # Rename 'creation_date' to 'event_date' for backward compatibility
+            cursor.execute("ALTER TABLE topics RENAME COLUMN creation_date TO event_date")
+        elif 'event_date' not in columns:
+            now = datetime.datetime.now().isoformat()
+            cursor.execute("ALTER TABLE topics ADD COLUMN event_date TEXT")
+            cursor.execute("UPDATE topics SET event_date = ? WHERE event_date IS NULL", (now,))
+        
+        self.conn.commit()
+
+    # Topic Methods
+    def add_topic(self, title, group_name, event_date):
+        cursor = self.conn.cursor()
+        if not group_name or not group_name.strip():
+            group_name = "Uncategorized"
+        cursor.execute("INSERT INTO topics (title, group_name, event_date) VALUES (?, ?, ?)",
+                       (title, group_name, event_date))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_all_topics(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, title, group_name, event_date FROM topics ORDER BY group_name, title")
+        return cursor.fetchall()
+
+    def get_all_group_names(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT DISTINCT group_name FROM topics ORDER BY group_name")
+        return [row[0] for row in cursor.fetchall()]
+
+    def delete_topic(self, topic_id):
+        # With ON DELETE CASCADE, sources are deleted automatically
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+        self.conn.commit()
+
+    def update_topic(self, topic_id, new_title, new_group_name, new_event_date):
+        cursor = self.conn.cursor()
+        if not new_group_name or not new_group_name.strip():
+            new_group_name = "Uncategorized"
+        cursor.execute("UPDATE topics SET title = ?, group_name = ?, event_date = ? WHERE id = ?",
+                       (new_title, new_group_name, new_event_date, topic_id))
+        self.conn.commit()
+
+    # Source Methods
+    def add_source(self, topic_id, uri, source_type, reliability, credibility, metadata='{}'):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO sources (topic_id, uri, type, reliability, credibility, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (topic_id, uri, source_type, reliability, credibility, metadata))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def get_sources_for_topic(self, topic_id):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, uri, type, reliability, credibility, metadata FROM sources WHERE topic_id = ?", (topic_id,))
+        return cursor.fetchall()
+
+    def update_source(self, source_id, uri, source_type, reliability, credibility, metadata):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE sources 
+            SET uri = ?, type = ?, reliability = ?, credibility = ?, metadata = ?
+            WHERE id = ?
+        """, (uri, source_type, reliability, credibility, metadata, source_id))
+        self.conn.commit()
+
+    def delete_source(self, source_id):
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+        self.conn.commit()

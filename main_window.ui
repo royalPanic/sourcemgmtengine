@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1024</width>
+    <height>768</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Source Management Engine</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="mainLayout">
+    <item>
+     <widget class="QSplitter" name="splitter">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <widget class="QWidget" name="leftPanel" native="true">
+       <layout class="QVBoxLayout" name="leftVLayout">
+        <item>
+         <layout class="QGridLayout" name="addTopicLayout">
+          <item row="0" column="0">
+           <widget class="QLineEdit" name="txtTopicTitle">
+            <property name="placeholderText">
+             <string>Enter new topic title...</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="txtGroupName">
+            <property name="placeholderText">
+             <string>Enter group name (optional)...</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QDateTimeEdit" name="dtEventDate"/>
+          </item>
+          <item row="1" column="1">
+           <widget class="QCheckBox" name="chkEnableTime">
+            <property name="text">
+             <string>Enable Time</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnAddTopic">
+          <property name="text">
+           <string>Add Topic</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="frame">
+          <property name="frameShape">
+           <enum>QFrame::StyledPanel</enum>
+          </property>
+          <property name="frameShadow">
+           <enum>QFrame::Raised</enum>
+          </property>
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <item>
+            <widget class="QPushButton" name="btnEditTopic">
+             <property name="text">
+              <string>Edit</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnDeleteTopic">
+             <property name="text">
+              <string>Delete</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTreeWidget" name="treeTopics">
+          <column>
+           <property name="text">
+            <string>Topic / Group</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Event Date</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="rightPanel" native="true">
+       <layout class="QVBoxLayout" name="rightVLayout">
+        <item>
+         <widget class="QLabel" name="lblSourcesFor">
+          <property name="text">
+           <string>Sources for: (No topic selected)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="tableSources">
+          <attribute name="verticalHeaderVisible">
+           <bool>false</bool>
+          </attribute>
+          <column>
+           <property name="text">
+            <string>URI</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Type</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Reliability</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Credibility</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Tags</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="sourceBtnLayout">
+          <item>
+           <widget class="QPushButton" name="btnAddSource">
+            <property name="text">
+             <string>Add Source</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnEditSource">
+            <property name="text">
+             <string>Edit Source</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnDeleteSource">
+            <property name="text">
+             <string>Delete Source</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
