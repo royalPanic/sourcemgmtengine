@@ -74,8 +74,9 @@ class SourceDialog(QDialog, Ui_SourceDialog):
         self.btnRemoveTag.clicked.connect(self.handle_remove_tag)
 
         if source_data:
-            _, uri, type, reliability, credibility, metadata_str, stance = source_data
+            _, uri, type, reliability, credibility, metadata_str, stance, description = source_data
             self.txtSourceURI.setText(uri)
+            self.txtDescription.setText(description if description else "")
             self.cboSourceType.setCurrentText(type)
             self.cboReliability.setCurrentText(RELIABILITY_MAP_REV.get(reliability, "F: Cannot be judged"))
             self.cboCredibility.setCurrentText(CREDIBILITY_MAP_REV.get(credibility, "6: Cannot be judged"))
@@ -111,6 +112,7 @@ class SourceDialog(QDialog, Ui_SourceDialog):
 
     def get_data(self):
         uri = self.txtSourceURI.text().strip()
+        description = self.txtDescription.text().strip()
         source_type = self.cboSourceType.currentText()
         reliability = RELIABILITY_MAP[self.cboReliability.currentText()]
         credibility = CREDIBILITY_MAP[self.cboCredibility.currentText()]
@@ -127,7 +129,7 @@ class SourceDialog(QDialog, Ui_SourceDialog):
             QMessageBox.warning(self, "Input Error", "The URI / Info field cannot be empty.")
             return None
 
-        return uri, source_type, reliability, credibility, json.dumps(metadata), stance
+        return uri, description, source_type, reliability, credibility, json.dumps(metadata), stance
 
 class SourceEngineApp(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -244,16 +246,17 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         self.tableSources.setRowCount(len(sources))
 
         for row, source in enumerate(sources):
-            source_id, uri, type, reliability, credibility, metadata_str, stance = source
+            source_id, uri, type, reliability, credibility, metadata_str, stance, description = source
             
             uri_item = QTableWidgetItem(uri)
             uri_item.setData(Qt.UserRole, source_id)
             
             self.tableSources.setItem(row, 0, uri_item)
-            self.tableSources.setItem(row, 1, QTableWidgetItem(type))
-            self.tableSources.setItem(row, 2, QTableWidgetItem(RELIABILITY_MAP_REV.get(reliability)))
-            self.tableSources.setItem(row, 3, QTableWidgetItem(CREDIBILITY_MAP_REV.get(credibility)))
-            self.tableSources.setItem(row, 4, QTableWidgetItem(stance if stance else "Supports"))
+            self.tableSources.setItem(row, 1, QTableWidgetItem(description if description else ""))
+            self.tableSources.setItem(row, 2, QTableWidgetItem(type))
+            self.tableSources.setItem(row, 3, QTableWidgetItem(RELIABILITY_MAP_REV.get(reliability)))
+            self.tableSources.setItem(row, 4, QTableWidgetItem(CREDIBILITY_MAP_REV.get(credibility)))
+            self.tableSources.setItem(row, 5, QTableWidgetItem(stance if stance else "Supports"))
 
             # Display tags in the Tags column
             tags_display = ""
@@ -262,7 +265,7 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
                 tags_display = ", ".join(metadata.get("tags", []))
             except (json.JSONDecodeError, TypeError):
                 pass
-            self.tableSources.setItem(row, 5, QTableWidgetItem(tags_display))
+            self.tableSources.setItem(row, 6, QTableWidgetItem(tags_display))
 
     def handle_add_source(self):
         topic_id, _, _, _ = self.get_selected_topic_info()
@@ -272,8 +275,8 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:
-                uri, source_type, reliability, credibility, metadata, stance = data
-                self.db.add_source(topic_id, uri, source_type, reliability, credibility, metadata, stance)
+                uri, description, source_type, reliability, credibility, metadata, stance = data
+                self.db.add_source(topic_id, uri, source_type, reliability, credibility, metadata, stance, description)
                 self.refresh_source_table()
 
     def handle_edit_source(self):
@@ -290,8 +293,8 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:
-                uri, source_type, reliability, credibility, metadata, stance = data
-                self.db.update_source(source_id, uri, source_type, reliability, credibility, metadata, stance)
+                uri, description, source_type, reliability, credibility, metadata, stance = data
+                self.db.update_source(source_id, uri, source_type, reliability, credibility, metadata, stance, description)
                 self.refresh_source_table()
 
     def handle_delete_source(self):

@@ -18,7 +18,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QSizePolicy, QVBoxLayout, QWidget)
+    QSizePolicy, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_SourceDialog(object):
     def setupUi(self, SourceDialog):
@@ -39,10 +39,20 @@ class Ui_SourceDialog(object):
 
         self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.txtSourceURI)
 
+        self.label_7 = QLabel(SourceDialog)
+        self.label_7.setObjectName(u"label_7")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.label_7)
+
+        self.txtDescription = QLineEdit(SourceDialog)
+        self.txtDescription.setObjectName(u"txtDescription")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.txtDescription)
+
         self.label_2 = QLabel(SourceDialog)
         self.label_2.setObjectName(u"label_2")
 
-        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.label_2)
+        self.formLayout.setWidget(2, QFormLayout.ItemRole.LabelRole, self.label_2)
 
         self.cboSourceType = QComboBox(SourceDialog)
         self.cboSourceType.addItem("")
@@ -53,47 +63,44 @@ class Ui_SourceDialog(object):
         self.cboSourceType.setObjectName(u"cboSourceType")
         self.cboSourceType.setEditable(True)
 
-        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.cboSourceType)
+        self.formLayout.setWidget(2, QFormLayout.ItemRole.FieldRole, self.cboSourceType)
 
         self.label_3 = QLabel(SourceDialog)
         self.label_3.setObjectName(u"label_3")
 
-        self.formLayout.setWidget(2, QFormLayout.ItemRole.LabelRole, self.label_3)
+        self.formLayout.setWidget(3, QFormLayout.ItemRole.LabelRole, self.label_3)
 
         self.cboReliability = QComboBox(SourceDialog)
         self.cboReliability.setObjectName(u"cboReliability")
 
-        self.formLayout.setWidget(2, QFormLayout.ItemRole.FieldRole, self.cboReliability)
+        self.formLayout.setWidget(3, QFormLayout.ItemRole.FieldRole, self.cboReliability)
 
         self.label_4 = QLabel(SourceDialog)
         self.label_4.setObjectName(u"label_4")
 
-        self.formLayout.setWidget(3, QFormLayout.ItemRole.LabelRole, self.label_4)
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.label_4)
 
         self.cboCredibility = QComboBox(SourceDialog)
         self.cboCredibility.setObjectName(u"cboCredibility")
 
-        self.formLayout.setWidget(3, QFormLayout.ItemRole.FieldRole, self.cboCredibility)
-
-        self.label_5 = QLabel(SourceDialog)
-        self.label_5.setObjectName(u"label_5")
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.FieldRole, self.cboCredibility)
 
         self.label_6 = QLabel(SourceDialog)
         self.label_6.setObjectName(u"label_6")
 
-        self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.label_6)
+        self.formLayout.setWidget(5, QFormLayout.ItemRole.LabelRole, self.label_6)
 
         self.cboStance = QComboBox(SourceDialog)
         self.cboStance.addItem("")
         self.cboStance.addItem("")
         self.cboStance.setObjectName(u"cboStance")
 
-        self.formLayout.setWidget(4, QFormLayout.ItemRole.FieldRole, self.cboStance)
+        self.formLayout.setWidget(5, QFormLayout.ItemRole.FieldRole, self.cboStance)
 
         self.label_5 = QLabel(SourceDialog)
         self.label_5.setObjectName(u"label_5")
 
-        self.formLayout.setWidget(5, QFormLayout.ItemRole.LabelRole, self.label_5)
+        self.formLayout.setWidget(6, QFormLayout.ItemRole.LabelRole, self.label_5)
 
         self.tagInputLayout = QHBoxLayout()
         self.tagInputLayout.setObjectName(u"tagInputLayout")
@@ -113,7 +120,7 @@ class Ui_SourceDialog(object):
 
         self.tagInputLayout.addWidget(self.btnAddTag)
 
-        self.formLayout.setLayout(5, QFormLayout.ItemRole.FieldRole, self.tagInputLayout)
+        self.formLayout.setLayout(6, QFormLayout.ItemRole.FieldRole, self.tagInputLayout)
 
         self.tagListLayout = QHBoxLayout()
         self.tagListLayout.setObjectName(u"tagListLayout")
@@ -128,7 +135,7 @@ class Ui_SourceDialog(object):
 
         self.tagListLayout.addWidget(self.btnRemoveTag)
 
-        self.formLayout.setLayout(6, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
+        self.formLayout.setLayout(7, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
 
 
         self.verticalLayout.addLayout(self.formLayout)
@@ -151,6 +158,8 @@ class Ui_SourceDialog(object):
     def retranslateUi(self, SourceDialog):
         SourceDialog.setWindowTitle(QCoreApplication.translate("SourceDialog", u"Add/Edit Source", None))
         self.label.setText(QCoreApplication.translate("SourceDialog", u"URI / Info:", None))
+        self.label_7.setText(QCoreApplication.translate("SourceDialog", u"Description:", None))
+        self.txtDescription.setPlaceholderText(QCoreApplication.translate("SourceDialog", u"Enter a human-readable title or description...", None))
         self.label_2.setText(QCoreApplication.translate("SourceDialog", u"Type:", None))
         self.cboSourceType.setItemText(0, QCoreApplication.translate("SourceDialog", u"Link", None))
         self.cboSourceType.setItemText(1, QCoreApplication.translate("SourceDialog", u"Image", None))

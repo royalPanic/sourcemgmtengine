@@ -120,8 +120,8 @@ class Ui_MainWindow(object):
         self.rightVLayout.addLayout(self.filterLayout)
 
         self.tableSources = QTableWidget(self.rightPanel)
-        if (self.tableSources.columnCount() < 6):
-            self.tableSources.setColumnCount(6)
+        if (self.tableSources.columnCount() < 7):
+            self.tableSources.setColumnCount(7)
         __qtablewidgetitem = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(0, __qtablewidgetitem)
         __qtablewidgetitem1 = QTableWidgetItem()
@@ -134,6 +134,8 @@ class Ui_MainWindow(object):
         self.tableSources.setHorizontalHeaderItem(4, __qtablewidgetitem4)
         __qtablewidgetitem5 = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(5, __qtablewidgetitem5)
+        __qtablewidgetitem6 = QTableWidgetItem()
+        self.tableSources.setHorizontalHeaderItem(6, __qtablewidgetitem6)
         self.tableSources.setObjectName(u"tableSources")
         self.tableSources.verticalHeader().setVisible(False)
 
@@ -185,15 +187,17 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem = self.tableSources.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"URI", None));
         ___qtablewidgetitem1 = self.tableSources.horizontalHeaderItem(1)
-        ___qtablewidgetitem1.setText(QCoreApplication.translate("MainWindow", u"Type", None));
+        ___qtablewidgetitem1.setText(QCoreApplication.translate("MainWindow", u"Description", None));
         ___qtablewidgetitem2 = self.tableSources.horizontalHeaderItem(2)
-        ___qtablewidgetitem2.setText(QCoreApplication.translate("MainWindow", u"Reliability", None));
+        ___qtablewidgetitem2.setText(QCoreApplication.translate("MainWindow", u"Type", None));
         ___qtablewidgetitem3 = self.tableSources.horizontalHeaderItem(3)
-        ___qtablewidgetitem3.setText(QCoreApplication.translate("MainWindow", u"Credibility", None));
+        ___qtablewidgetitem3.setText(QCoreApplication.translate("MainWindow", u"Reliability", None));
         ___qtablewidgetitem4 = self.tableSources.horizontalHeaderItem(4)
-        ___qtablewidgetitem4.setText(QCoreApplication.translate("MainWindow", u"Stance", None));
+        ___qtablewidgetitem4.setText(QCoreApplication.translate("MainWindow", u"Credibility", None));
         ___qtablewidgetitem5 = self.tableSources.horizontalHeaderItem(5)
-        ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
+        ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"Stance", None));
+        ___qtablewidgetitem6 = self.tableSources.horizontalHeaderItem(6)
+        ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
         self.lblFilterStance.setText(QCoreApplication.translate("MainWindow", u"Filter by Stance:", None))
         self.cboFilterStance.setItemText(0, QCoreApplication.translate("MainWindow", u"All", None))
         self.cboFilterStance.setItemText(1, QCoreApplication.translate("MainWindow", u"Supports", None))
