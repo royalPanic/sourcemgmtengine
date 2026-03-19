@@ -78,7 +78,22 @@ class Ui_SourceDialog(object):
         self.label_5 = QLabel(SourceDialog)
         self.label_5.setObjectName(u"label_5")
 
-        self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.label_5)
+        self.label_6 = QLabel(SourceDialog)
+        self.label_6.setObjectName(u"label_6")
+
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.label_6)
+
+        self.cboStance = QComboBox(SourceDialog)
+        self.cboStance.addItem("")
+        self.cboStance.addItem("")
+        self.cboStance.setObjectName(u"cboStance")
+
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.FieldRole, self.cboStance)
+
+        self.label_5 = QLabel(SourceDialog)
+        self.label_5.setObjectName(u"label_5")
+
+        self.formLayout.setWidget(5, QFormLayout.ItemRole.LabelRole, self.label_5)
 
         self.tagInputLayout = QHBoxLayout()
         self.tagInputLayout.setObjectName(u"tagInputLayout")
@@ -98,7 +113,7 @@ class Ui_SourceDialog(object):
 
         self.tagInputLayout.addWidget(self.btnAddTag)
 
-        self.formLayout.setLayout(4, QFormLayout.ItemRole.FieldRole, self.tagInputLayout)
+        self.formLayout.setLayout(5, QFormLayout.ItemRole.FieldRole, self.tagInputLayout)
 
         self.tagListLayout = QHBoxLayout()
         self.tagListLayout.setObjectName(u"tagListLayout")
@@ -113,7 +128,7 @@ class Ui_SourceDialog(object):
 
         self.tagListLayout.addWidget(self.btnRemoveTag)
 
-        self.formLayout.setLayout(5, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
+        self.formLayout.setLayout(6, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
 
 
         self.verticalLayout.addLayout(self.formLayout)
@@ -145,6 +160,9 @@ class Ui_SourceDialog(object):
 
         self.label_3.setText(QCoreApplication.translate("SourceDialog", u"Reliability:", None))
         self.label_4.setText(QCoreApplication.translate("SourceDialog", u"Credibility:", None))
+        self.label_6.setText(QCoreApplication.translate("SourceDialog", u"Stance:", None))
+        self.cboStance.setItemText(0, QCoreApplication.translate("SourceDialog", u"Supports", None))
+        self.cboStance.setItemText(1, QCoreApplication.translate("SourceDialog", u"Rebuts", None))
         self.label_5.setText(QCoreApplication.translate("SourceDialog", u"Tags:", None))
         self.cboTagInput.lineEdit().setPlaceholderText(QCoreApplication.translate("SourceDialog", u"Select or type a new tag...", None))
         self.btnAddTag.setText(QCoreApplication.translate("SourceDialog", u"Add Tag", None))

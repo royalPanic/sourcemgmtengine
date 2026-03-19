@@ -15,8 +15,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDateTimeEdit, QFrame,
-    QGridLayout, QHBoxLayout, QHeaderView, QLabel,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit,
+    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QPushButton, QSizePolicy,
     QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -101,9 +101,27 @@ class Ui_MainWindow(object):
 
         self.rightVLayout.addWidget(self.lblSourcesFor)
 
+        self.filterLayout = QHBoxLayout()
+        self.filterLayout.setObjectName(u"filterLayout")
+        self.lblFilterStance = QLabel(self.rightPanel)
+        self.lblFilterStance.setObjectName(u"lblFilterStance")
+
+        self.filterLayout.addWidget(self.lblFilterStance)
+
+        self.cboFilterStance = QComboBox(self.rightPanel)
+        self.cboFilterStance.addItem("")
+        self.cboFilterStance.addItem("")
+        self.cboFilterStance.addItem("")
+        self.cboFilterStance.setObjectName(u"cboFilterStance")
+
+        self.filterLayout.addWidget(self.cboFilterStance)
+
+
+        self.rightVLayout.addLayout(self.filterLayout)
+
         self.tableSources = QTableWidget(self.rightPanel)
-        if (self.tableSources.columnCount() < 5):
-            self.tableSources.setColumnCount(5)
+        if (self.tableSources.columnCount() < 6):
+            self.tableSources.setColumnCount(6)
         __qtablewidgetitem = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(0, __qtablewidgetitem)
         __qtablewidgetitem1 = QTableWidgetItem()
@@ -114,6 +132,8 @@ class Ui_MainWindow(object):
         self.tableSources.setHorizontalHeaderItem(3, __qtablewidgetitem3)
         __qtablewidgetitem4 = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(4, __qtablewidgetitem4)
+        __qtablewidgetitem5 = QTableWidgetItem()
+        self.tableSources.setHorizontalHeaderItem(5, __qtablewidgetitem5)
         self.tableSources.setObjectName(u"tableSources")
         self.tableSources.verticalHeader().setVisible(False)
 
@@ -171,7 +191,13 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem3 = self.tableSources.horizontalHeaderItem(3)
         ___qtablewidgetitem3.setText(QCoreApplication.translate("MainWindow", u"Credibility", None));
         ___qtablewidgetitem4 = self.tableSources.horizontalHeaderItem(4)
-        ___qtablewidgetitem4.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
+        ___qtablewidgetitem4.setText(QCoreApplication.translate("MainWindow", u"Stance", None));
+        ___qtablewidgetitem5 = self.tableSources.horizontalHeaderItem(5)
+        ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
+        self.lblFilterStance.setText(QCoreApplication.translate("MainWindow", u"Filter by Stance:", None))
+        self.cboFilterStance.setItemText(0, QCoreApplication.translate("MainWindow", u"All", None))
+        self.cboFilterStance.setItemText(1, QCoreApplication.translate("MainWindow", u"Supports", None))
+        self.cboFilterStance.setItemText(2, QCoreApplication.translate("MainWindow", u"Rebuts", None))
         self.btnAddSource.setText(QCoreApplication.translate("MainWindow", u"Add Source", None))
         self.btnEditSource.setText(QCoreApplication.translate("MainWindow", u"Edit Source", None))
         self.btnDeleteSource.setText(QCoreApplication.translate("MainWindow", u"Delete Source", None))
