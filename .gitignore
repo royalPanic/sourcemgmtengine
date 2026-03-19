@@ -416,3 +416,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+
+# Project Specific
+engine_data.db
+engine_data.db-journal
