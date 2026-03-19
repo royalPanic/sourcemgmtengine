@@ -118,6 +118,11 @@
          <string>Rebuts</string>
         </property>
        </item>
+       <item>
+        <property name="text">
+         <string>Neutral</string>
+        </property>
+       </item>
       </widget>
      </item>
      <item row="6" column="0">
@@ -151,7 +156,42 @@
        </item>
       </layout>
      </item>
+     <item row="7" column="0">
+      <widget class="QLabel" name="label_8">
+       <property name="text">
+        <string>Media:</string>
+       </property>
+      </widget>
+     </item>
      <item row="7" column="1">
+      <layout class="QHBoxLayout" name="mediaLayout">
+       <item>
+        <widget class="QLineEdit" name="txtMediaPath">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+         <property name="placeholderText">
+          <string>No media attached</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnUploadFile">
+         <property name="text">
+          <string>Upload File</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnAttachLink">
+         <property name="text">
+          <string>Attach Link</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="8" column="1">
       <layout class="QHBoxLayout" name="tagListLayout">
        <item>
         <widget class="QListWidget" name="listTags">

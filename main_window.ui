@@ -134,6 +134,11 @@
               <string>Rebuts</string>
              </property>
             </item>
+            <item>
+             <property name="text">
+              <string>Neutral</string>
+             </property>
+            </item>
            </widget>
           </item>
          </layout>
@@ -176,6 +181,11 @@
           <column>
            <property name="text">
             <string>Tags</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Media</string>
            </property>
           </column>
          </widget>

@@ -52,6 +52,8 @@ class SourceManagerDB:
             cursor.execute("ALTER TABLE sources ADD COLUMN stance TEXT DEFAULT 'Supports'")
         if 'description' not in source_columns:
             cursor.execute("ALTER TABLE sources ADD COLUMN description TEXT DEFAULT ''")
+        if 'media_path' not in source_columns:
+            cursor.execute("ALTER TABLE sources ADD COLUMN media_path TEXT DEFAULT ''")
         
         self.conn.commit()
 
@@ -90,30 +92,30 @@ class SourceManagerDB:
         self.conn.commit()
 
     # Source Methods
-    def add_source(self, topic_id, uri, source_type, reliability, credibility, metadata='{}', stance='Supports', description=''):
+    def add_source(self, topic_id, uri, source_type, reliability, credibility, metadata='{}', stance='Supports', description='', media_path=''):
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO sources (topic_id, uri, type, reliability, credibility, metadata, stance, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (topic_id, uri, source_type, reliability, credibility, metadata, stance, description))
+            INSERT INTO sources (topic_id, uri, type, reliability, credibility, metadata, stance, description, media_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (topic_id, uri, source_type, reliability, credibility, metadata, stance, description, media_path))
         self.conn.commit()
         return cursor.lastrowid
 
     def get_sources_for_topic(self, topic_id, stance_filter=None):
         cursor = self.conn.cursor()
         if stance_filter and stance_filter != "All":
-            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description FROM sources WHERE topic_id = ? AND stance = ?", (topic_id, stance_filter))
+            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description, media_path FROM sources WHERE topic_id = ? AND stance = ?", (topic_id, stance_filter))
         else:
-            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description FROM sources WHERE topic_id = ?", (topic_id,))
+            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description, media_path FROM sources WHERE topic_id = ?", (topic_id,))
         return cursor.fetchall()
 
-    def update_source(self, source_id, uri, source_type, reliability, credibility, metadata, stance='Supports', description=''):
+    def update_source(self, source_id, uri, source_type, reliability, credibility, metadata, stance='Supports', description='', media_path=''):
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE sources 
-            SET uri = ?, type = ?, reliability = ?, credibility = ?, metadata = ?, stance = ?, description = ?
+            SET uri = ?, type = ?, reliability = ?, credibility = ?, metadata = ?, stance = ?, description = ?, media_path = ?
             WHERE id = ?
-        """, (uri, source_type, reliability, credibility, metadata, stance, description, source_id))
+        """, (uri, source_type, reliability, credibility, metadata, stance, description, media_path, source_id))
         self.conn.commit()
 
     def get_all_tags(self):

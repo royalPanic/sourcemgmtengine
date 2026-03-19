@@ -3,9 +3,11 @@ import datetime
 import json
 from PySide6.QtCore import Qt, QDateTime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QMessageBox, QDialog, 
-                               QTreeWidgetItem, QHeaderView, QTableWidgetItem)
+                               QTreeWidgetItem, QHeaderView, QTableWidgetItem,
+                               QFileDialog, QInputDialog)
 
 from engine_db import SourceManagerDB
+from media_utils import copy_file_to_media, get_absolute_media_path
 from main_window_ui import Ui_MainWindow
 from edit_topic_dialog_ui import Ui_EditTopicDialog
 from add_edit_source_dialog_ui import Ui_SourceDialog
@@ -73,14 +75,25 @@ class SourceDialog(QDialog, Ui_SourceDialog):
         self.btnAddTag.clicked.connect(self.handle_add_tag)
         self.btnRemoveTag.clicked.connect(self.handle_remove_tag)
 
+        # Connect media buttons
+        self.btnUploadFile.clicked.connect(self.handle_upload_file)
+        self.btnAttachLink.clicked.connect(self.handle_attach_link)
+
+        self._media_path = ""
+
         if source_data:
-            _, uri, type, reliability, credibility, metadata_str, stance, description = source_data
+            _, uri, type, reliability, credibility, metadata_str, stance, description, media_path = source_data
             self.txtSourceURI.setText(uri)
             self.txtDescription.setText(description if description else "")
             self.cboSourceType.setCurrentText(type)
             self.cboReliability.setCurrentText(RELIABILITY_MAP_REV.get(reliability, "F: Cannot be judged"))
             self.cboCredibility.setCurrentText(CREDIBILITY_MAP_REV.get(credibility, "6: Cannot be judged"))
             self.cboStance.setCurrentText(stance if stance else "Supports")
+
+            # Load media path
+            if media_path:
+                self._media_path = media_path
+                self.txtMediaPath.setText(media_path)
 
             # Load tags from JSON into the list widget
             try:
@@ -110,6 +123,23 @@ class SourceDialog(QDialog, Ui_SourceDialog):
         if current_item:
             self.listTags.takeItem(self.listTags.row(current_item))
 
+    def handle_upload_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Media File", "",
+            "All Files (*);;Images (*.png *.jpg *.jpeg *.gif *.bmp);;Videos (*.mp4 *.avi *.mkv);;Documents (*.pdf *.doc *.docx)")
+        if file_path:
+            relative_path = copy_file_to_media(file_path)
+            if relative_path:
+                self._media_path = relative_path
+                self.txtMediaPath.setText(relative_path)
+
+    def handle_attach_link(self):
+        link, ok = QInputDialog.getText(self, "Attach Media Link",
+                                        "Enter a URL or path to media:")
+        if ok and link.strip():
+            self._media_path = link.strip()
+            self.txtMediaPath.setText(link.strip())
+
     def get_data(self):
         uri = self.txtSourceURI.text().strip()
         description = self.txtDescription.text().strip()
@@ -129,7 +159,7 @@ class SourceDialog(QDialog, Ui_SourceDialog):
             QMessageBox.warning(self, "Input Error", "The URI / Info field cannot be empty.")
             return None
 
-        return uri, description, source_type, reliability, credibility, json.dumps(metadata), stance
+        return uri, description, source_type, reliability, credibility, json.dumps(metadata), stance, self._media_path
 
 class SourceEngineApp(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -246,7 +276,7 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         self.tableSources.setRowCount(len(sources))
 
         for row, source in enumerate(sources):
-            source_id, uri, type, reliability, credibility, metadata_str, stance, description = source
+            source_id, uri, type, reliability, credibility, metadata_str, stance, description, media_path = source
             
             uri_item = QTableWidgetItem(uri)
             uri_item.setData(Qt.UserRole, source_id)
@@ -266,6 +296,7 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
             except (json.JSONDecodeError, TypeError):
                 pass
             self.tableSources.setItem(row, 6, QTableWidgetItem(tags_display))
+            self.tableSources.setItem(row, 7, QTableWidgetItem(media_path if media_path else ""))
 
     def handle_add_source(self):
         topic_id, _, _, _ = self.get_selected_topic_info()
@@ -275,8 +306,8 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:
-                uri, description, source_type, reliability, credibility, metadata, stance = data
-                self.db.add_source(topic_id, uri, source_type, reliability, credibility, metadata, stance, description)
+                uri, description, source_type, reliability, credibility, metadata, stance, media_path = data
+                self.db.add_source(topic_id, uri, source_type, reliability, credibility, metadata, stance, description, media_path)
                 self.refresh_source_table()
 
     def handle_edit_source(self):
@@ -293,8 +324,8 @@ class SourceEngineApp(QMainWindow, Ui_MainWindow):
         if dialog.exec() == QDialog.Accepted:
             data = dialog.get_data()
             if data:
-                uri, description, source_type, reliability, credibility, metadata, stance = data
-                self.db.update_source(source_id, uri, source_type, reliability, credibility, metadata, stance, description)
+                uri, description, source_type, reliability, credibility, metadata, stance, media_path = data
+                self.db.update_source(source_id, uri, source_type, reliability, credibility, metadata, stance, description, media_path)
                 self.refresh_source_table()
 
     def handle_delete_source(self):
