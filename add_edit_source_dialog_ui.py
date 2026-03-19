@@ -93,6 +93,7 @@ class Ui_SourceDialog(object):
         self.cboStance = QComboBox(SourceDialog)
         self.cboStance.addItem("")
         self.cboStance.addItem("")
+        self.cboStance.addItem("")
         self.cboStance.setObjectName(u"cboStance")
 
         self.formLayout.setWidget(5, QFormLayout.ItemRole.FieldRole, self.cboStance)
@@ -137,6 +138,31 @@ class Ui_SourceDialog(object):
 
         self.formLayout.setLayout(7, QFormLayout.ItemRole.FieldRole, self.tagListLayout)
 
+        self.label_8 = QLabel(SourceDialog)
+        self.label_8.setObjectName(u"label_8")
+
+        self.formLayout.setWidget(8, QFormLayout.ItemRole.LabelRole, self.label_8)
+
+        self.mediaLayout = QHBoxLayout()
+        self.mediaLayout.setObjectName(u"mediaLayout")
+        self.txtMediaPath = QLineEdit(SourceDialog)
+        self.txtMediaPath.setObjectName(u"txtMediaPath")
+        self.txtMediaPath.setReadOnly(True)
+
+        self.mediaLayout.addWidget(self.txtMediaPath)
+
+        self.btnUploadFile = QPushButton(SourceDialog)
+        self.btnUploadFile.setObjectName(u"btnUploadFile")
+
+        self.mediaLayout.addWidget(self.btnUploadFile)
+
+        self.btnAttachLink = QPushButton(SourceDialog)
+        self.btnAttachLink.setObjectName(u"btnAttachLink")
+
+        self.mediaLayout.addWidget(self.btnAttachLink)
+
+        self.formLayout.setLayout(8, QFormLayout.ItemRole.FieldRole, self.mediaLayout)
+
 
         self.verticalLayout.addLayout(self.formLayout)
 
@@ -172,9 +198,14 @@ class Ui_SourceDialog(object):
         self.label_6.setText(QCoreApplication.translate("SourceDialog", u"Stance:", None))
         self.cboStance.setItemText(0, QCoreApplication.translate("SourceDialog", u"Supports", None))
         self.cboStance.setItemText(1, QCoreApplication.translate("SourceDialog", u"Rebuts", None))
+        self.cboStance.setItemText(2, QCoreApplication.translate("SourceDialog", u"Neutral", None))
         self.label_5.setText(QCoreApplication.translate("SourceDialog", u"Tags:", None))
         self.cboTagInput.lineEdit().setPlaceholderText(QCoreApplication.translate("SourceDialog", u"Select or type a new tag...", None))
         self.btnAddTag.setText(QCoreApplication.translate("SourceDialog", u"Add Tag", None))
         self.btnRemoveTag.setText(QCoreApplication.translate("SourceDialog", u"Remove", None))
+        self.label_8.setText(QCoreApplication.translate("SourceDialog", u"Media:", None))
+        self.txtMediaPath.setPlaceholderText(QCoreApplication.translate("SourceDialog", u"No media attached", None))
+        self.btnUploadFile.setText(QCoreApplication.translate("SourceDialog", u"Upload File", None))
+        self.btnAttachLink.setText(QCoreApplication.translate("SourceDialog", u"Attach Link", None))
     # retranslateUi
 

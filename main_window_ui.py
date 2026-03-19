@@ -112,6 +112,7 @@ class Ui_MainWindow(object):
         self.cboFilterStance.addItem("")
         self.cboFilterStance.addItem("")
         self.cboFilterStance.addItem("")
+        self.cboFilterStance.addItem("")
         self.cboFilterStance.setObjectName(u"cboFilterStance")
 
         self.filterLayout.addWidget(self.cboFilterStance)
@@ -120,8 +121,8 @@ class Ui_MainWindow(object):
         self.rightVLayout.addLayout(self.filterLayout)
 
         self.tableSources = QTableWidget(self.rightPanel)
-        if (self.tableSources.columnCount() < 7):
-            self.tableSources.setColumnCount(7)
+        if (self.tableSources.columnCount() < 8):
+            self.tableSources.setColumnCount(8)
         __qtablewidgetitem = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(0, __qtablewidgetitem)
         __qtablewidgetitem1 = QTableWidgetItem()
@@ -136,6 +137,8 @@ class Ui_MainWindow(object):
         self.tableSources.setHorizontalHeaderItem(5, __qtablewidgetitem5)
         __qtablewidgetitem6 = QTableWidgetItem()
         self.tableSources.setHorizontalHeaderItem(6, __qtablewidgetitem6)
+        __qtablewidgetitem7 = QTableWidgetItem()
+        self.tableSources.setHorizontalHeaderItem(7, __qtablewidgetitem7)
         self.tableSources.setObjectName(u"tableSources")
         self.tableSources.verticalHeader().setVisible(False)
 
@@ -198,10 +201,13 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"Stance", None));
         ___qtablewidgetitem6 = self.tableSources.horizontalHeaderItem(6)
         ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
+        ___qtablewidgetitem7 = self.tableSources.horizontalHeaderItem(7)
+        ___qtablewidgetitem7.setText(QCoreApplication.translate("MainWindow", u"Media", None));
         self.lblFilterStance.setText(QCoreApplication.translate("MainWindow", u"Filter by Stance:", None))
         self.cboFilterStance.setItemText(0, QCoreApplication.translate("MainWindow", u"All", None))
         self.cboFilterStance.setItemText(1, QCoreApplication.translate("MainWindow", u"Supports", None))
         self.cboFilterStance.setItemText(2, QCoreApplication.translate("MainWindow", u"Rebuts", None))
+        self.cboFilterStance.setItemText(3, QCoreApplication.translate("MainWindow", u"Neutral", None))
         self.btnAddSource.setText(QCoreApplication.translate("MainWindow", u"Add Source", None))
         self.btnEditSource.setText(QCoreApplication.translate("MainWindow", u"Edit Source", None))
         self.btnDeleteSource.setText(QCoreApplication.translate("MainWindow", u"Delete Source", None))
