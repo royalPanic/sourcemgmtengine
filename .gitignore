@@ -421,3 +421,6 @@ FodyWeavers.xsd
 # Project Specific
 engine_data.db
 engine_data.db-journal
+/build
+/dist
+*.spec
