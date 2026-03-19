@@ -109,6 +109,36 @@
          </widget>
         </item>
         <item>
+         <layout class="QHBoxLayout" name="filterLayout">
+          <item>
+           <widget class="QLabel" name="lblFilterStance">
+            <property name="text">
+             <string>Filter by Stance:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="cboFilterStance">
+            <item>
+             <property name="text">
+              <string>All</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Supports</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Rebuts</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
          <widget class="QTableWidget" name="tableSources">
           <attribute name="verticalHeaderVisible">
            <bool>false</bool>
@@ -116,6 +146,11 @@
           <column>
            <property name="text">
             <string>URI</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Description</string>
            </property>
           </column>
           <column>
@@ -131,6 +166,11 @@
           <column>
            <property name="text">
             <string>Credibility</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Stance</string>
            </property>
           </column>
           <column>

@@ -44,6 +44,14 @@ class SourceManagerDB:
             now = datetime.datetime.now().isoformat()
             cursor.execute("ALTER TABLE topics ADD COLUMN event_date TEXT")
             cursor.execute("UPDATE topics SET event_date = ? WHERE event_date IS NULL", (now,))
+
+        # Add stance column to sources if it doesn't exist
+        cursor.execute("PRAGMA table_info(sources)")
+        source_columns = [info[1] for info in cursor.fetchall()]
+        if 'stance' not in source_columns:
+            cursor.execute("ALTER TABLE sources ADD COLUMN stance TEXT DEFAULT 'Supports'")
+        if 'description' not in source_columns:
+            cursor.execute("ALTER TABLE sources ADD COLUMN description TEXT DEFAULT ''")
         
         self.conn.commit()
 
@@ -82,28 +90,46 @@ class SourceManagerDB:
         self.conn.commit()
 
     # Source Methods
-    def add_source(self, topic_id, uri, source_type, reliability, credibility, metadata='{}'):
+    def add_source(self, topic_id, uri, source_type, reliability, credibility, metadata='{}', stance='Supports', description=''):
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO sources (topic_id, uri, type, reliability, credibility, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (topic_id, uri, source_type, reliability, credibility, metadata))
+            INSERT INTO sources (topic_id, uri, type, reliability, credibility, metadata, stance, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (topic_id, uri, source_type, reliability, credibility, metadata, stance, description))
         self.conn.commit()
         return cursor.lastrowid
 
-    def get_sources_for_topic(self, topic_id):
+    def get_sources_for_topic(self, topic_id, stance_filter=None):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, uri, type, reliability, credibility, metadata FROM sources WHERE topic_id = ?", (topic_id,))
+        if stance_filter and stance_filter != "All":
+            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description FROM sources WHERE topic_id = ? AND stance = ?", (topic_id, stance_filter))
+        else:
+            cursor.execute("SELECT id, uri, type, reliability, credibility, metadata, stance, description FROM sources WHERE topic_id = ?", (topic_id,))
         return cursor.fetchall()
 
-    def update_source(self, source_id, uri, source_type, reliability, credibility, metadata):
+    def update_source(self, source_id, uri, source_type, reliability, credibility, metadata, stance='Supports', description=''):
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE sources 
-            SET uri = ?, type = ?, reliability = ?, credibility = ?, metadata = ?
+            SET uri = ?, type = ?, reliability = ?, credibility = ?, metadata = ?, stance = ?, description = ?
             WHERE id = ?
-        """, (uri, source_type, reliability, credibility, metadata, source_id))
+        """, (uri, source_type, reliability, credibility, metadata, stance, description, source_id))
         self.conn.commit()
+
+    def get_all_tags(self):
+        """Return a sorted list of all unique tags used across all sources."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT metadata FROM sources WHERE metadata IS NOT NULL")
+        all_tags = set()
+        for (metadata_str,) in cursor.fetchall():
+            try:
+                metadata = json.loads(metadata_str)
+                for tag in metadata.get("tags", []):
+                    if tag.strip():
+                        all_tags.add(tag.strip())
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return sorted(all_tags)
 
     def delete_source(self, source_id):
         cursor = self.conn.cursor()
