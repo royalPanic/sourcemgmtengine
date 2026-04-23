@@ -42,11 +42,7 @@ jobs:
       - name: Package dist for release
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          python - <<'PY'
-import shutil
-shutil.make_archive('release-{}'.format('${{ matrix.os }}'), 'zip', 'dist')
-print('Created archive:', 'release-{}'.format('${{ matrix.os }}') + '.zip')
-PY
+          python -c "import shutil; shutil.make_archive('release-{}'.format('${{ matrix.os }}'), 'zip', 'dist'); print('Created archive: release-{}.zip'.format('${{ matrix.os }}'))"
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
