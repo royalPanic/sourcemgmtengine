@@ -31,3 +31,5 @@ urllib3_secure_extra~=0.1.0
 verboselogs~=1.7
 wcwidth~=0.6.0
 xmlrpclib~=1.0.1
+yt-dlp>=2026.1.0
+requests>=2.0.0

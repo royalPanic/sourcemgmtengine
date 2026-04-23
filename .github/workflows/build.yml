@@ -1,0 +1,73 @@
+name: Build Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Fetch FFmpeg builds
+        run: python scripts/fetch_ffmpeg.py
+
+      - name: Build executable (PyInstaller)
+        run: python scripts/build_exe.py --name source-management-engine-${{ matrix.os }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-management-engine-${{ matrix.os }}
+          path: dist
+
+      - name: Package dist for release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python - <<'PY'
+import shutil
+shutil.make_archive('release-{}'.format('${{ matrix.os }}'), 'zip', 'dist')
+print('Created archive:', 'release-{}'.format('${{ matrix.os }}') + '.zip')
+PY
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          body: 'Automated release from CI'
+          draft: false
+          prerelease: false
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release-${{ matrix.os }}.zip
+          asset_name: source-management-engine-${{ matrix.os }}.zip
+          asset_content_type: application/zip

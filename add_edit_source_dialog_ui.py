@@ -18,6 +18,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton,
+    QProgressBar,
     QSizePolicy, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_SourceDialog(object):
@@ -161,6 +162,20 @@ class Ui_SourceDialog(object):
 
         self.mediaLayout.addWidget(self.btnAttachLink)
 
+        self.btnDownloadURL = QPushButton(SourceDialog)
+        self.btnDownloadURL.setObjectName(u"btnDownloadURL")
+        self.mediaLayout.addWidget(self.btnDownloadURL)
+
+        self.progressBar = QProgressBar(SourceDialog)
+        self.progressBar.setObjectName(u"progressBar")
+        self.progressBar.setVisible(False)
+        self.mediaLayout.addWidget(self.progressBar)
+        
+        self.btnCancelDownload = QPushButton(SourceDialog)
+        self.btnCancelDownload.setObjectName(u"btnCancelDownload")
+        self.btnCancelDownload.setVisible(False)
+        self.mediaLayout.addWidget(self.btnCancelDownload)
+
         self.formLayout.setLayout(8, QFormLayout.ItemRole.FieldRole, self.mediaLayout)
 
 
@@ -207,5 +222,8 @@ class Ui_SourceDialog(object):
         self.txtMediaPath.setPlaceholderText(QCoreApplication.translate("SourceDialog", u"No media attached", None))
         self.btnUploadFile.setText(QCoreApplication.translate("SourceDialog", u"Upload File", None))
         self.btnAttachLink.setText(QCoreApplication.translate("SourceDialog", u"Attach Link", None))
+        self.btnDownloadURL.setText(QCoreApplication.translate("SourceDialog", u"Download URL", None))
+        self.progressBar.setFormat(QCoreApplication.translate("SourceDialog", u"%p%", None))
+        self.btnCancelDownload.setText(QCoreApplication.translate("SourceDialog", u"Cancel", None))
     # retranslateUi
 
