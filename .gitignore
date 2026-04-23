@@ -424,3 +424,4 @@ engine_data.db-journal
 *.spec
 /build
 /dist
+/.venv
