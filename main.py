@@ -265,8 +265,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 grp_item.setText(0, group_name)
                 grp_item.setData(0, Qt.UserRole, None)
                 groups[group_name] = grp_item
+            # Create topic item with two columns: title and event date
             topic_item = QTreeWidgetItem()
             topic_item.setText(0, title)
+            # Ensure a safe string for the event date column
+            topic_text_date = event_date or ''
+            topic_item.setText(1, topic_text_date)
             topic_item.setData(0, Qt.UserRole, tid)
             groups[group_name].addChild(topic_item)
         self.treeTopics.expandAll()
