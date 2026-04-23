@@ -15,11 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit,
-    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QMainWindow, QPushButton, QSizePolicy,
-    QSplitter, QTableWidget, QTableWidgetItem, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
+    QHeaderView, QLabel, QMainWindow, QPushButton,
+    QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -37,31 +36,6 @@ class Ui_MainWindow(object):
         self.leftPanel.setObjectName(u"leftPanel")
         self.leftVLayout = QVBoxLayout(self.leftPanel)
         self.leftVLayout.setObjectName(u"leftVLayout")
-        self.addTopicLayout = QGridLayout()
-        self.addTopicLayout.setObjectName(u"addTopicLayout")
-        self.txtTopicTitle = QLineEdit(self.leftPanel)
-        self.txtTopicTitle.setObjectName(u"txtTopicTitle")
-
-        self.addTopicLayout.addWidget(self.txtTopicTitle, 0, 0, 1, 1)
-
-        self.txtGroupName = QLineEdit(self.leftPanel)
-        self.txtGroupName.setObjectName(u"txtGroupName")
-
-        self.addTopicLayout.addWidget(self.txtGroupName, 0, 1, 1, 1)
-
-        self.dtEventDate = QDateTimeEdit(self.leftPanel)
-        self.dtEventDate.setObjectName(u"dtEventDate")
-
-        self.addTopicLayout.addWidget(self.dtEventDate, 1, 0, 1, 1)
-
-        self.chkEnableTime = QCheckBox(self.leftPanel)
-        self.chkEnableTime.setObjectName(u"chkEnableTime")
-
-        self.addTopicLayout.addWidget(self.chkEnableTime, 1, 1, 1, 1)
-
-
-        self.leftVLayout.addLayout(self.addTopicLayout)
-
         self.btnAddTopic = QPushButton(self.leftPanel)
         self.btnAddTopic.setObjectName(u"btnAddTopic")
 
@@ -177,9 +151,6 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Source Management Engine", None))
-        self.txtTopicTitle.setPlaceholderText(QCoreApplication.translate("MainWindow", u"Enter new topic title...", None))
-        self.txtGroupName.setPlaceholderText(QCoreApplication.translate("MainWindow", u"Enter group name (optional)...", None))
-        self.chkEnableTime.setText(QCoreApplication.translate("MainWindow", u"Enable Time", None))
         self.btnAddTopic.setText(QCoreApplication.translate("MainWindow", u"Add Topic", None))
         self.btnEditTopic.setText(QCoreApplication.translate("MainWindow", u"Edit", None))
         self.btnDeleteTopic.setText(QCoreApplication.translate("MainWindow", u"Delete", None))
@@ -187,6 +158,12 @@ class Ui_MainWindow(object):
         ___qtreewidgetitem.setText(1, QCoreApplication.translate("MainWindow", u"Event Date", None));
         ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"Topic / Group", None));
         self.lblSourcesFor.setText(QCoreApplication.translate("MainWindow", u"Sources for: (No topic selected)", None))
+        self.lblFilterStance.setText(QCoreApplication.translate("MainWindow", u"Filter by Stance:", None))
+        self.cboFilterStance.setItemText(0, QCoreApplication.translate("MainWindow", u"All", None))
+        self.cboFilterStance.setItemText(1, QCoreApplication.translate("MainWindow", u"Supports", None))
+        self.cboFilterStance.setItemText(2, QCoreApplication.translate("MainWindow", u"Rebuts", None))
+        self.cboFilterStance.setItemText(3, QCoreApplication.translate("MainWindow", u"Neutral", None))
+
         ___qtablewidgetitem = self.tableSources.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"URI", None));
         ___qtablewidgetitem1 = self.tableSources.horizontalHeaderItem(1)
@@ -203,11 +180,6 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"Tags", None));
         ___qtablewidgetitem7 = self.tableSources.horizontalHeaderItem(7)
         ___qtablewidgetitem7.setText(QCoreApplication.translate("MainWindow", u"Media", None));
-        self.lblFilterStance.setText(QCoreApplication.translate("MainWindow", u"Filter by Stance:", None))
-        self.cboFilterStance.setItemText(0, QCoreApplication.translate("MainWindow", u"All", None))
-        self.cboFilterStance.setItemText(1, QCoreApplication.translate("MainWindow", u"Supports", None))
-        self.cboFilterStance.setItemText(2, QCoreApplication.translate("MainWindow", u"Rebuts", None))
-        self.cboFilterStance.setItemText(3, QCoreApplication.translate("MainWindow", u"Neutral", None))
         self.btnAddSource.setText(QCoreApplication.translate("MainWindow", u"Add Source", None))
         self.btnEditSource.setText(QCoreApplication.translate("MainWindow", u"Edit Source", None))
         self.btnDeleteSource.setText(QCoreApplication.translate("MainWindow", u"Delete Source", None))

@@ -22,34 +22,7 @@
       </property>
       <widget class="QWidget" name="leftPanel" native="true">
        <layout class="QVBoxLayout" name="leftVLayout">
-        <item>
-         <layout class="QGridLayout" name="addTopicLayout">
-          <item row="0" column="0">
-           <widget class="QLineEdit" name="txtTopicTitle">
-            <property name="placeholderText">
-             <string>Enter new topic title...</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <widget class="QLineEdit" name="txtGroupName">
-            <property name="placeholderText">
-             <string>Enter group name (optional)...</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QDateTimeEdit" name="dtEventDate"/>
-          </item>
-          <item row="1" column="1">
-           <widget class="QCheckBox" name="chkEnableTime">
-            <property name="text">
-             <string>Enable Time</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
+        <!-- Topic input fields removed; Add Topic now uses the dialog -->
         <item>
          <widget class="QPushButton" name="btnAddTopic">
           <property name="text">
