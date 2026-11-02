@@ -12,6 +12,12 @@ mod patch_tests;
 #[cfg(test)]
 mod validation_tests;
 
+#[cfg(test)]
+mod rating_tests;
+
+#[cfg(test)]
+mod rating_sql_tests;
+
 use commands::{cases, files, sources};
 use database::connection::init_sql_plugin;
 

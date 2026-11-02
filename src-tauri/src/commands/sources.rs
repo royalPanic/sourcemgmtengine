@@ -5,7 +5,10 @@ use chrono::Utc;
 
 use crate::database::pool;
 use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType, Stance};
-use crate::validation::{is_hh_mm, is_iso_date, patch_optional};
+use crate::validation::{
+    is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
+    validate_reliability_patch,
+};
 
 const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, source_date, source_time, custom_metadata, created_at, updated_at";
 
@@ -143,6 +146,13 @@ pub async fn create_source(
 ) -> Result<Source, String> {
     validate_stance(&app, &case_id, &stance).await?;
 
+    // Ratings are optional; validate whatever was supplied so bad input is
+    // rejected here rather than by the database CHECK constraint.
+    validate_reliability_patch(&reliability_code)?;
+    validate_credibility_patch(credibility_code)?;
+    let reliability_code = reliability_code.filter(|c| !c.trim().is_empty());
+    let credibility_code = credibility_code.filter(|c| *c != 0);
+
     // Empty strings are normalised to NULL so "cleared" and "never set" agree.
     let source_date = source_date.filter(|d| !d.trim().is_empty());
     let source_time = source_time.filter(|t| !t.trim().is_empty());
@@ -244,6 +254,13 @@ pub async fn update_source(
 
     validate_stance(&app, &existing.source.case_id, &stance).await?;
 
+    // Ratings are optional. An empty string (reliability) or 0 (credibility)
+    // means "clear", matching how the create path treats an unrated source.
+    validate_reliability_patch(&reliability_code)?;
+    validate_credibility_patch(credibility_code)?;
+    let reliability_code = patch_optional(reliability_code);
+    let credibility_code = patch_optional_int(credibility_code);
+
     let source_date = patch_optional(source_date);
     let source_time = patch_optional(source_time);
 
@@ -312,6 +329,7 @@ pub async fn update_source(
         statement = statement.bind(raw_text);
     }
     if let Some(reliability_code) = reliability_code {
+        // `None` here is an explicit clear, so bind NULL rather than skipping.
         statement = statement.bind(reliability_code);
     }
     if let Some(credibility_code) = credibility_code {

@@ -184,6 +184,8 @@ export function DetailDrawer({
         sourceType,
         url,
         rawText,
+        // Empty string / 0 clear the stored rating; the backend maps them to
+        // NULL. Sending `undefined` would leave the old value in place.
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
         stance: isEvent && stance ? (stance as Stance) : undefined,
