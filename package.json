@@ -1,6 +1,6 @@
 {
   "name": "osint-case-manager",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "OSINT Case & Source Manager - Local-first intelligence case management",
   "type": "module",
   "scripts": {
