@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Case } from '../types';
 import { formatEventDate } from './Sidebar';
+import { TimeInput } from './TimeInput';
+import { formatUtc } from '../utils/datetime';
 
 interface EventHeaderProps {
   container: Case;
@@ -23,6 +25,7 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
   const [time, setTime] = useState(container.event_time ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [timeValid, setTimeValid] = useState(true);
 
   useEffect(() => {
     setTitle(container.title);
@@ -71,6 +74,11 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
               {container.event_date
                 ? formatEventDate(container.event_date, container.event_time)
                 : 'No date set'}
+              {container.event_date && container.event_time && (
+                <span className="ml-2 text-xs text-zinc-500 font-mono">
+                  {formatUtc(container.event_date, container.event_time)}
+                </span>
+              )}
             </p>
             {container.description && (
               <p className="mt-1 text-xs text-zinc-500">{container.description}</p>
@@ -108,18 +116,24 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
             <input
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => {
+                const nextDate = e.target.value;
+                setDate(nextDate);
+                if (!nextDate) setTime('');
+              }}
               className="input"
             />
             <p className="text-[11px] text-zinc-500 mt-1">Optional — clear to mark as unknown</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-400 mb-1">Time</label>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="input"
+            <TimeInput
+              date={date}
+              time={time}
+              onChange={setTime}
+              onValidityChange={setTimeValid}
+              disabled={!date}
+              ariaLabel="Event time (24-hour, local)"
             />
           </div>
         </div>
@@ -130,7 +144,7 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
           <button type="button" className="btn-secondary text-xs" onClick={cancel} disabled={saving}>
             Cancel
           </button>
-          <button type="button" className="btn-primary text-xs" onClick={() => void commit()} disabled={saving}>
+          <button type="button" className="btn-primary text-xs" onClick={() => void commit()} disabled={saving || !timeValid}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

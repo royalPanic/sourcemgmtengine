@@ -129,6 +129,10 @@ pub struct Source {
     pub reliability_code: Option<String>,
     pub credibility_code: Option<i32>,
     pub stance: Option<Stance>,
+    /// Optional calendar date (`YYYY-MM-DD`) the source itself refers to.
+    pub source_date: Option<String>,
+    /// Optional wall-clock time (`HH:MM`) paired with `source_date`.
+    pub source_time: Option<String>,
     pub custom_metadata: String,
     pub created_at: String,
     pub updated_at: String,
@@ -196,6 +200,8 @@ impl Source {
         reliability_code: Option<String>,
         credibility_code: Option<i32>,
         stance: Option<Stance>,
+        source_date: Option<String>,
+        source_time: Option<String>,
         custom_metadata: serde_json::Value,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
@@ -209,6 +215,8 @@ impl Source {
             reliability_code,
             credibility_code,
             stance,
+            source_date,
+            source_time,
             custom_metadata: custom_metadata.to_string(),
             created_at: now.clone(),
             updated_at: now,

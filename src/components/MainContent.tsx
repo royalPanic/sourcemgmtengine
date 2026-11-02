@@ -26,6 +26,8 @@ interface MainContentProps {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    sourceDate?: string;
+    sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
   onUpdateSource: (id: string, params: Partial<{
@@ -36,6 +38,8 @@ interface MainContentProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    sourceDate: string;
+    sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;

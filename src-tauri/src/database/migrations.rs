@@ -81,5 +81,19 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_source_date_time",
+            sql: r#"
+                -- Sources may carry their own optional date/time, independent of
+                -- the container's event date. Same text shapes as `cases`:
+                -- calendar date (YYYY-MM-DD) and wall-clock time (HH:MM).
+                ALTER TABLE sources ADD COLUMN source_date TEXT;
+                ALTER TABLE sources ADD COLUMN source_time TEXT;
+
+                CREATE INDEX IF NOT EXISTS idx_sources_source_date ON sources(source_date);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

@@ -5,8 +5,9 @@ use chrono::Utc;
 
 use crate::database::pool;
 use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType, Stance};
+use crate::validation::{is_hh_mm, is_iso_date, patch_optional};
 
-const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, custom_metadata, created_at, updated_at";
+const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, source_date, source_time, custom_metadata, created_at, updated_at";
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
@@ -21,6 +22,8 @@ fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
         reliability_code: row.get("reliability_code"),
         credibility_code: row.get("credibility_code"),
         stance: stance_str.as_deref().and_then(Stance::from_db),
+        source_date: row.get("source_date"),
+        source_time: row.get("source_time"),
         custom_metadata: row.get("custom_metadata"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -98,6 +101,31 @@ async fn validate_stance(
     }
 }
 
+/// Rejects a source date/time pair that does not match the expected shape, so
+/// bad input never reaches the database. Both fields are optional; a time
+/// without a date is meaningless, so it is rejected.
+fn validate_source_datetime(
+    source_date: &Option<String>,
+    source_time: &Option<String>,
+) -> Result<(), String> {
+    if let Some(date) = source_date {
+        if !date.is_empty() && !is_iso_date(date) {
+            return Err(format!("Source date must be YYYY-MM-DD, got \"{}\"", date));
+        }
+    }
+
+    if let Some(time) = source_time {
+        if !time.is_empty() && !is_hh_mm(time) {
+            return Err(format!("Source time must be HH:MM, got \"{}\"", time));
+        }
+        if source_date.as_deref().map_or(true, str::is_empty) {
+            return Err("A source time requires a source date".to_string());
+        }
+    }
+
+    Ok(())
+}
+
 #[command]
 pub async fn create_source(
     app: AppHandle,
@@ -109,9 +137,16 @@ pub async fn create_source(
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
     stance: Option<Stance>,
+    source_date: Option<String>,
+    source_time: Option<String>,
     custom_metadata: Value,
 ) -> Result<Source, String> {
     validate_stance(&app, &case_id, &stance).await?;
+
+    // Empty strings are normalised to NULL so "cleared" and "never set" agree.
+    let source_date = source_date.filter(|d| !d.trim().is_empty());
+    let source_time = source_time.filter(|t| !t.trim().is_empty());
+    validate_source_datetime(&source_date, &source_time)?;
 
     let pool = pool::pool(&app).await?;
     let source = Source::new(
@@ -123,13 +158,15 @@ pub async fn create_source(
         reliability_code,
         credibility_code,
         stance,
+        source_date,
+        source_time,
         custom_metadata,
     );
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, custom_metadata, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, source_date, source_time, custom_metadata, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&source.id)
     .bind(&source.case_id)
@@ -140,6 +177,8 @@ pub async fn create_source(
     .bind(&source.reliability_code)
     .bind(source.credibility_code)
     .bind(source.stance.as_ref().map(|s| s.as_db()))
+    .bind(&source.source_date)
+    .bind(&source.source_time)
     .bind(&source.custom_metadata)
     .bind(&now)
     .bind(&now)
@@ -192,6 +231,8 @@ pub async fn update_source(
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
     stance: Option<Stance>,
+    source_date: Option<String>,
+    source_time: Option<String>,
     custom_metadata: Option<Value>,
 ) -> Result<Source, String> {
     let pool = pool::pool(&app).await?;
@@ -202,6 +243,21 @@ pub async fn update_source(
         .ok_or("Source not found".to_string())?;
 
     validate_stance(&app, &existing.source.case_id, &stance).await?;
+
+    let source_date = patch_optional(source_date);
+    let source_time = patch_optional(source_time);
+
+    // Validate against the effective post-update values so a partial update
+    // cannot leave a source with a time but no date.
+    let effective_date = match &source_date {
+        Some(patch) => patch.clone(),
+        None => existing.source.source_date.clone(),
+    };
+    let effective_time = match &source_time {
+        Some(patch) => patch.clone(),
+        None => existing.source.source_time.clone(),
+    };
+    validate_source_datetime(&effective_date, &effective_time)?;
 
     let mut updates: Vec<&str> = Vec::new();
     if title.is_some() {
@@ -224,6 +280,12 @@ pub async fn update_source(
     }
     if stance.is_some() {
         updates.push("stance = ?");
+    }
+    if source_date.is_some() {
+        updates.push("source_date = ?");
+    }
+    if source_time.is_some() {
+        updates.push("source_time = ?");
     }
     if custom_metadata.is_some() {
         updates.push("custom_metadata = ?");
@@ -257,6 +319,12 @@ pub async fn update_source(
     }
     if let Some(stance) = stance {
         statement = statement.bind(stance.as_db().to_string());
+    }
+    if let Some(source_date) = source_date {
+        statement = statement.bind(source_date);
+    }
+    if let Some(source_time) = source_time {
+        statement = statement.bind(source_time);
     }
     if let Some(custom_metadata) = custom_metadata {
         statement = statement.bind(custom_metadata.to_string());

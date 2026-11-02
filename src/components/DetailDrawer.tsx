@@ -11,6 +11,7 @@ import {
   STANCE_NONE_LABEL,
 } from '../types';
 import { MediaPreview } from './MediaPreview';
+import { SourceDateTimeFields } from './SourceDateTimeFields';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
@@ -35,6 +36,8 @@ interface DetailDrawerProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    sourceDate: string;
+    sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => Promise<unknown>;
   onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
@@ -61,6 +64,9 @@ export function DetailDrawer({
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
   const [stance, setStance] = useState('');
+  const [sourceDate, setSourceDate] = useState('');
+  const [sourceTime, setSourceTime] = useState('');
+  const [timeValid, setTimeValid] = useState(true);
   const [locationLabel, setLocationLabel] = useState('');
   const [coordFormat, setCoordFormat] = useState<CoordinateFormat>('dd');
   // Canonical decimal degrees. The text field is only a rendering of this, so
@@ -86,6 +92,8 @@ export function DetailDrawer({
     setReliabilityCode(source.reliability_code ?? '');
     setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
     setStance(source.stance ?? '');
+    setSourceDate(source.source_date ?? '');
+    setSourceTime(source.source_time ?? '');
 
     const location = readLocation(source.custom_metadata);
     setCoord(location ? { lat: location.lat, lon: location.lon } : null);
@@ -179,6 +187,9 @@ export function DetailDrawer({
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
         stance: isEvent && stance ? (stance as Stance) : undefined,
+        // Empty strings clear the stored values.
+        sourceDate,
+        sourceTime: sourceDate ? sourceTime : '',
         customMetadata,
       });
     } catch (err) {
@@ -255,6 +266,16 @@ export function DetailDrawer({
             <label className="block text-sm font-medium mb-1">Raw Text</label>
             <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="textarea" rows={5} />
           </div>
+
+          <SourceDateTimeFields
+            date={sourceDate}
+            time={sourceTime}
+            onChange={({ date, time }) => {
+              setSourceDate(date);
+              setSourceTime(time);
+            }}
+            onValidityChange={setTimeValid}
+          />
 
           <section className="card p-4">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">NATO Admiralty Rating</h3>
@@ -451,7 +472,7 @@ export function DetailDrawer({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
               Close
             </button>
-            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim()}>
+            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim() || !timeValid}>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>

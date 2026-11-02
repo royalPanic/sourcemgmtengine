@@ -43,6 +43,10 @@ export interface Source {
   reliability_code: ReliabilityCode | null;
   credibility_code: CredibilityCode | null;
   stance: Stance | null;
+  /** Optional calendar date the source itself refers to, `YYYY-MM-DD`. */
+  source_date: string | null;
+  /** Optional wall-clock time, `HH:MM`. Requires `source_date`. */
+  source_time: string | null;
   custom_metadata: string; // JSON string
   created_at: string;
   updated_at: string;

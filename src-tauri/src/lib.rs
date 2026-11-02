@@ -1,12 +1,16 @@
 mod commands;
 mod database;
 mod models;
+mod validation;
 
 #[cfg(test)]
 mod scope_tests;
 
 #[cfg(test)]
 mod patch_tests;
+
+#[cfg(test)]
+mod validation_tests;
 
 use commands::{cases, files, sources};
 use database::connection::init_sql_plugin;

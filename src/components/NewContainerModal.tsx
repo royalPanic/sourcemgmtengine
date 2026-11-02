@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ContainerKind } from '../types';
+import { TimeInput } from './TimeInput';
 
 interface NewContainerModalProps {
   kind: ContainerKind;
@@ -18,6 +19,7 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
   const [description, setDescription] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
+  const [timeValid, setTimeValid] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,13 +86,15 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Time</label>
-                <input
-                  type="time"
-                  value={eventTime}
-                  onChange={(e) => setEventTime(e.target.value)}
-                  className="input"
+                <TimeInput
+                  date={eventDate}
+                  time={eventTime}
+                  onChange={setEventTime}
+                  onValidityChange={setTimeValid}
+                  disabled={!eventDate}
+                  ariaLabel="Event time (24-hour, local)"
                 />
-                <p className="text-[11px] text-zinc-500 mt-1">Optional</p>
+                {!eventTime && <p className="text-[11px] text-zinc-500 mt-1">Optional</p>}
               </div>
             </div>
           )}
@@ -112,7 +116,7 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
             <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !title.trim()}>
+            <button type="submit" className="btn-primary" disabled={submitting || !title.trim() || !timeValid}>
               {submitting ? 'Creating…' : isEvent ? 'Create Event' : 'Create Case'}
             </button>
           </div>

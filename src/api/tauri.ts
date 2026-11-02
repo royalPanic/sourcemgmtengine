@@ -58,6 +58,8 @@ export const sourcesApi = {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    sourceDate?: string;
+    sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => invoke<Source>('create_source', {
     caseId: params.caseId,
@@ -68,6 +70,8 @@ export const sourcesApi = {
     reliabilityCode: params.reliabilityCode,
     credibilityCode: params.credibilityCode,
     stance: params.stance,
+    sourceDate: params.sourceDate,
+    sourceTime: params.sourceTime,
     customMetadata: params.customMetadata ?? {},
   }),
   
@@ -85,6 +89,8 @@ export const sourcesApi = {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    sourceDate: string;
+    sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => invoke<Source>('update_source', {
     id,
@@ -95,6 +101,9 @@ export const sourcesApi = {
     reliabilityCode: params.reliabilityCode,
     credibilityCode: params.credibilityCode,
     stance: params.stance,
+    // An empty string clears the stored value; omitting the key leaves it alone.
+    sourceDate: params.sourceDate,
+    sourceTime: params.sourceTime,
     customMetadata: params.customMetadata,
   }),
   

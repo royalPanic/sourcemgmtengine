@@ -24,6 +24,8 @@ function source(
     reliability_code: reliability,
     credibility_code: credibility,
     stance,
+    source_date: null,
+    source_time: null,
     custom_metadata: '{}',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

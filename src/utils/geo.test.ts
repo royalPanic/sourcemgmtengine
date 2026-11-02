@@ -34,6 +34,8 @@ function sourceWithMeta(meta: Record<string, unknown>): SourceWithAttachments {
     reliability_code: null,
     credibility_code: null,
     stance: null,
+    source_date: null,
+    source_time: null,
     custom_metadata: JSON.stringify(meta),
     created_at: '',
     updated_at: '',

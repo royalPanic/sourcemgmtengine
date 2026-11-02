@@ -36,6 +36,8 @@ export function useSources(caseId: string | null) {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    sourceDate?: string;
+    sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => {
     if (!caseId) throw new Error('No case selected');
@@ -53,6 +55,8 @@ export function useSources(caseId: string | null) {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    sourceDate: string;
+    sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => {
     const updated = await sourcesApi.update(id, params);

@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import { SourceDateTimeFields } from './SourceDateTimeFields';
+import { formatEventDate } from './Sidebar';
+import { formatUtc } from '../utils/datetime';
 import {
   SOURCE_TYPES,
   RELIABILITY_CODES,
@@ -23,6 +26,8 @@ interface SourcesGridProps {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    sourceDate?: string;
+    sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
   onUpdateSource: (id: string, params: Partial<{
@@ -33,6 +38,8 @@ interface SourcesGridProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    sourceDate: string;
+    sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;
@@ -92,6 +99,7 @@ export function SourcesGrid({
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Type</th>
+                <th className="px-4 py-2 font-medium">Date</th>
                 <th className="px-4 py-2 font-medium">Admiralty</th>
                 {isEvent && <th className="px-4 py-2 font-medium">Stance</th>}
                 <th className="px-4 py-2 font-medium">Attachments</th>
@@ -113,6 +121,20 @@ export function SourcesGrid({
                     )}
                   </td>
                   <td className="px-4 py-3 text-zinc-400">{source.source_type}</td>
+                  <td className="px-4 py-3 text-zinc-400 text-xs whitespace-nowrap">
+                    {source.source_date ? (
+                      <>
+                        <div>{formatEventDate(source.source_date, source.source_time)}</div>
+                        {source.source_time && (
+                          <div className="text-[11px] text-zinc-500 font-mono">
+                            {formatUtc(source.source_date, source.source_time)}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-zinc-600">–</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       {source.reliability_code ? (
@@ -215,6 +237,8 @@ function NewSourceModal({
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    sourceDate?: string;
+    sourceTime?: string;
   }) => Promise<void>;
 }) {
   const [title, setTitle] = useState('');
@@ -224,6 +248,9 @@ function NewSourceModal({
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
   const [stance, setStance] = useState('');
+  const [sourceDate, setSourceDate] = useState('');
+  const [sourceTime, setSourceTime] = useState('');
+  const [timeValid, setTimeValid] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,6 +268,8 @@ function NewSourceModal({
         reliabilityCode: reliabilityCode || undefined,
         credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
         stance: isEvent && stance ? (stance as Stance) : undefined,
+        sourceDate: sourceDate || undefined,
+        sourceTime: sourceDate && sourceTime ? sourceTime : undefined,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -299,6 +328,18 @@ function NewSourceModal({
               className="textarea"
               placeholder="Captured source content"
               rows={3}
+            />
+          </div>
+
+          <div className="mb-4">
+            <SourceDateTimeFields
+              date={sourceDate}
+              time={sourceTime}
+              onChange={({ date, time }) => {
+                setSourceDate(date);
+                setSourceTime(time);
+              }}
+              onValidityChange={setTimeValid}
             />
           </div>
 
@@ -364,7 +405,7 @@ function NewSourceModal({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !title.trim()}>
+            <button type="submit" className="btn-primary" disabled={submitting || !title.trim() || !timeValid}>
               {submitting ? 'Adding…' : 'Add Source'}
             </button>
           </div>
