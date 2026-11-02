@@ -140,7 +140,9 @@ export function MainContent({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      {/* Must be a flex column so each tab's `flex-1` resolves to the available
+          height; otherwise tall tabs overflow and get clipped instead of scrolling. */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {activeTab === 'notes' && (
           <CaseNotesEditor
             key={caseId}
