@@ -31,13 +31,22 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "royalPanic",
+    "shortDescription": "Local-first OSINT case and source manager",
+    "longDescription": "A local-first desktop application for managing intelligence cases, structured source evaluation, narrative case notes, and media evidence attachments. All data stays on your machine.",
+    "category": "Productivity",
+    "copyright": "Copyright © 2026 royalPanic",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   },
   "plugins": {
     "sql": {

@@ -70,7 +70,12 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-Bundles land in `src-tauri/target/release/bundle/`.
+Bundles land in `src-tauri/target/release/bundle/`:
+
+| Platform | Output |
+| :--- | :--- |
+| Windows | `nsis/*-setup.exe` (per-user, no admin) and `msi/*.msi` (per-machine, admin) |
+| Linux | `deb/*.deb` and `appimage/*.AppImage` |
 
 ### Other scripts
 
@@ -81,6 +86,37 @@ Bundles land in `src-tauri/target/release/bundle/`.
 | `npm run preview` | Serve the built frontend |
 | `npm run tauri:dev` | Full desktop app with hot reload |
 | `npm run tauri:build` | Release bundle |
+| `npm test` | Run the unit test suite |
+| `npm run gen:world-outline` | Regenerate the map's land outlines from Natural Earth |
+
+---
+
+## Releasing
+
+Releases are built by GitHub Actions and published as draft releases.
+
+1. Bump the version in **all three** manifests — they must agree or the release job fails:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+2. Commit, then tag and push:
+
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+3. The [release workflow](.github/workflows/release.yml) validates the tag against the manifests, builds
+   Windows and Linux bundles, generates `SHA256SUMS.txt`, and opens a **draft** release.
+4. Review the draft and publish it.
+
+You can also trigger a build manually from the Actions tab with an existing tag.
+
+### Installers are unsigned
+
+No code-signing certificate is configured, so Windows SmartScreen will warn on first run. Users must
+choose **More info → Run anyway**. To sign, add the certificate as repository secrets and wire up
+`bundle.windows.certificateThumbprint` / `signCommand` in `tauri.conf.json`.
 
 ---
 
