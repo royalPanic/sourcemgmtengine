@@ -4,6 +4,7 @@ import {
   scoreToReliabilityLabel,
   scoreToCredibilityLabel,
   formatAverage,
+  scoreToBarPercent,
   isReferenceLinked,
   isMetaReferenced,
   RELIABILITY_SCORES,
@@ -247,5 +248,37 @@ describe('formatAverage', () => {
     expect(formatAverage(1)).toBe('1.0');
     expect(formatAverage(2.25)).toBe('2.3');
     expect(formatAverage(null)).toBe('—');
+  });
+});
+
+describe('scoreToBarPercent', () => {
+  it('makes the best score the longest bar', () => {
+    // 1 is the best Admiralty score, so it must fill the track.
+    expect(scoreToBarPercent(1, 6)).toBeCloseTo(100);
+  });
+
+  it('makes the worst score the shortest bar', () => {
+    // 6 is the worst, so it is a sliver rather than a full bar.
+    expect(scoreToBarPercent(6, 6)).toBeCloseTo(100 / 6);
+  });
+
+  it('decreases monotonically as the score worsens', () => {
+    const percents = [1, 2, 3, 4, 5, 6].map(score => scoreToBarPercent(score, 6));
+    for (let i = 1; i < percents.length; i += 1) {
+      expect(percents[i]).toBeLessThan(percents[i - 1]);
+    }
+  });
+
+  it('places an average of 3.5 in the middle of the track', () => {
+    expect(scoreToBarPercent(3.5, 6)).toBeCloseTo(58.33, 1);
+  });
+
+  it('returns zero for an unrated dimension', () => {
+    expect(scoreToBarPercent(null, 6)).toBe(0);
+  });
+
+  it('clamps out-of-range scores instead of overflowing the track', () => {
+    expect(scoreToBarPercent(0, 6)).toBeCloseTo(100);
+    expect(scoreToBarPercent(9, 6)).toBeCloseTo(100 / 6);
   });
 });

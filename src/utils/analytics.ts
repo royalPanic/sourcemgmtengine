@@ -239,6 +239,23 @@ export function formatAverage(average: number | null): string {
 }
 
 /**
+ * Converts an Admiralty average into a bar length as a percentage.
+ *
+ * The scale runs 1 (best) to 6 (worst), but a longer bar should read as
+ * *better*, so the length is inverted: an average of 1 fills the track and an
+ * average of 6 is a sliver. The bar is drawn from the right edge, which keeps
+ * the visual consistent with the 6 → 1 axis beneath it.
+ *
+ * `max` is the worst score (6 for both dimensions). Returns 0 for a null
+ * average so callers can leave the bar invisible.
+ */
+export function scoreToBarPercent(average: number | null, max: number): number {
+  if (average === null || max <= 0) return 0;
+  const clamped = Math.min(max, Math.max(1, average));
+  return ((max + 1 - clamped) / max) * 100;
+}
+
+/**
  * Describes how much better one stance's average is than another's.
  * Returns null when either side has no data.
  */
