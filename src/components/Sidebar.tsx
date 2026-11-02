@@ -5,7 +5,10 @@ interface SidebarProps {
   cases: Case[];
   loading: boolean;
   selectedCaseId: string | null;
+  /** True when the global meta source manager is showing instead of a container. */
+  metaSourcesActive: boolean;
   onSelectCase: (caseId: string) => void;
+  onOpenMetaSources: () => void;
   onCreateCase: () => void;
   onCreateEvent: () => void;
   onDeleteCase: (caseId: string) => void;
@@ -15,7 +18,9 @@ export function Sidebar({
   cases,
   loading,
   selectedCaseId,
+  metaSourcesActive,
   onSelectCase,
+  onOpenMetaSources,
   onCreateCase,
   onCreateEvent,
   onDeleteCase,
@@ -117,6 +122,16 @@ export function Sidebar({
       </div>
 
       <div className="p-4 border-t border-zinc-800 space-y-2">
+        <button
+          onClick={onOpenMetaSources}
+          className={`w-full justify-start ${metaSourcesActive ? 'btn-primary' : 'btn-secondary'}`}
+          title="Manage the global list of people and organisations sources can reference"
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" />
+          </svg>
+          Meta Sources
+        </button>
         <button onClick={onCreateCase} className="btn-primary w-full">
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

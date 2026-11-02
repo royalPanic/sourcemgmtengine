@@ -95,5 +95,63 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add_meta_sources_and_source_references",
+            sql: r#"
+                -- Meta sources are the people and organisations behind the
+                -- reporting: a news agency, an official, a spokesperson. They
+                -- are global rather than per-case, so one entity is described
+                -- once and can be cited from any case or event.
+                CREATE TABLE IF NOT EXISTS meta_sources (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'organization'
+                        CHECK (kind IN ('person','organization','other')),
+                    description TEXT,
+                    url TEXT,
+                    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
+                    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                -- A source may cite either a sibling source in the same
+                -- container or a global meta source. ON DELETE SET NULL keeps
+                -- the citing source (and the rating it inherited) alive when
+                -- the thing it cites is removed.
+                ALTER TABLE sources ADD COLUMN reference_source_id TEXT
+                    REFERENCES sources(id) ON DELETE SET NULL;
+                ALTER TABLE sources ADD COLUMN reference_meta_source_id TEXT
+                    REFERENCES meta_sources(id) ON DELETE SET NULL;
+
+                -- SQLite cannot add a CHECK constraint with ALTER TABLE, so the
+                -- "one reference, not both" rule is enforced with triggers.
+                -- `update_source` also enforces it, but the schema is the last
+                -- line of defence for any future writer.
+                CREATE TRIGGER IF NOT EXISTS sources_reference_exclusive_insert
+                BEFORE INSERT ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_meta_source_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or a meta source, not both');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS sources_reference_exclusive_update
+                BEFORE UPDATE ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_meta_source_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or a meta source, not both');
+                END;
+
+                CREATE INDEX IF NOT EXISTS idx_sources_reference_source_id
+                    ON sources(reference_source_id);
+                CREATE INDEX IF NOT EXISTS idx_sources_reference_meta_source_id
+                    ON sources(reference_meta_source_id);
+                CREATE INDEX IF NOT EXISTS idx_meta_sources_name ON meta_sources(name);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

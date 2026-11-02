@@ -12,6 +12,8 @@ import {
 } from '../types';
 import { MediaPreview } from './MediaPreview';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
+import { ReferenceSelect, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
+import type { MetaSourceSummary } from '../types';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
@@ -28,6 +30,9 @@ interface DetailDrawerProps {
   onClose: () => void;
   source: SourceWithAttachments | null;
   isEvent: boolean;
+  /** Sibling sources in the same container, for the reference dropdown. */
+  siblings: SourceWithAttachments[];
+  metaSources: MetaSourceSummary[];
   onUpdate: (id: string, params: Partial<{
     title: string;
     sourceType: SourceType;
@@ -36,6 +41,8 @@ interface DetailDrawerProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    referenceSourceId: string;
+    referenceMetaSourceId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -51,6 +58,8 @@ export function DetailDrawer({
   onClose,
   source,
   isEvent,
+  siblings,
+  metaSources,
   onUpdate,
   onImportAttachment,
   onDeleteAttachment,
@@ -64,6 +73,7 @@ export function DetailDrawer({
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
   const [stance, setStance] = useState('');
+  const [reference, setReference] = useState<ReferenceSelection>({ kind: 'none', id: '' });
   const [sourceDate, setSourceDate] = useState('');
   const [sourceTime, setSourceTime] = useState('');
   const [timeValid, setTimeValid] = useState(true);
@@ -92,6 +102,7 @@ export function DetailDrawer({
     setReliabilityCode(source.reliability_code ?? '');
     setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
     setStance(source.stance ?? '');
+    setReference(selectionOf(source));
     setSourceDate(source.source_date ?? '');
     setSourceTime(source.source_time ?? '');
 
@@ -179,6 +190,7 @@ export function DetailDrawer({
 
     setSaving(true);
     try {
+      const isReferenced = reference.kind !== 'none';
       await onUpdate(source.id, {
         title: title.trim(),
         sourceType,
@@ -188,7 +200,9 @@ export function DetailDrawer({
         // NULL. Sending `undefined` would leave the old value in place.
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
-        stance: isEvent && stance ? (stance as Stance) : undefined,
+        // A citing source carries no stance; the backend enforces this too.
+        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
+        ...referenceIds(reference),
         // Empty strings clear the stored values.
         sourceDate,
         sourceTime: sourceDate ? sourceTime : '',
@@ -280,6 +294,29 @@ export function DetailDrawer({
           />
 
           <section className="card p-4">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Provenance</h3>
+            <ReferenceSelect
+              value={reference}
+              siblings={siblings}
+              metaSources={metaSources}
+              disabled={saving}
+              onChange={(next) => {
+                setReference(next);
+                // Mirror the reference's rating as the default. Live sync means
+                // the backend re-applies it on save anyway, but showing the
+                // value here makes the inheritance visible before committing.
+                const rating = referenceRating(next, siblings, metaSources);
+                setReliabilityCode(rating?.reliability_code ?? '');
+                setCredibilityCode(
+                  rating?.credibility_code ? String(rating.credibility_code) : ''
+                );
+                // A citing source never carries a stance.
+                if (next.kind !== 'none') setStance('');
+              }}
+            />
+          </section>
+
+          <section className="card p-4">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">NATO Admiralty Rating</h3>
 
             <div className="mb-4">
@@ -316,13 +353,28 @@ export function DetailDrawer({
           {isEvent && (
             <section className="card p-4">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance on Event</h3>
-              <select value={stance} onChange={(e) => setStance(e.target.value)} className="select">
+              <select
+                value={reference.kind !== 'none' ? '' : stance}
+                onChange={(e) => setStance(e.target.value)}
+                className="select"
+                disabled={reference.kind !== 'none'}
+                title={
+                  reference.kind !== 'none'
+                    ? 'A source that references another source carries no stance'
+                    : undefined
+                }
+              >
                 <option value="">{STANCE_NONE_LABEL}</option>
                 {STANCES.map(value => (
                   <option key={value} value={value}>{STANCE_DEFINITIONS[value].label}</option>
                 ))}
               </select>
-              {stance ? (
+              {reference.kind !== 'none' ? (
+                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+                  Locked to none while this source references another. Repeated reporting of
+                  one core source must not count as independent corroboration.
+                </p>
+              ) : stance ? (
                 <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
                   {STANCE_DEFINITIONS[stance as Stance].description}
                 </p>

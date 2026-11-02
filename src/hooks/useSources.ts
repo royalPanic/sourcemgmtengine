@@ -28,6 +28,23 @@ export function useSources(caseId: string | null) {
     loadSources();
   }, [loadSources]);
 
+  /**
+   * Re-reads the whole list without touching the loading flag.
+   *
+   * A write can change rows other than the one being edited: a source's rating
+   * propagates to every source that cites it, so patching the single edited row
+   * in place would leave siblings stale.
+   */
+  const reloadQuietly = useCallback(async () => {
+    if (!caseId) return;
+    try {
+      const data = await sourcesApi.getAll(caseId);
+      setSources(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh sources');
+    }
+  }, [caseId]);
+
   const createSource = async (params: {
     title: string;
     sourceType: SourceType;
@@ -36,15 +53,22 @@ export function useSources(caseId: string | null) {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    referenceSourceId?: string;
+    referenceMetaSourceId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => {
     if (!caseId) throw new Error('No case selected');
     const newSource = await sourcesApi.create({ caseId, ...params });
-    const withAttachments: SourceWithAttachments = { ...newSource, attachments: [] };
-    setSources(prev => [withAttachments, ...prev]);
-    return withAttachments;
+    const withDetails = await sourcesApi.get(newSource.id);
+    const created = withDetails ?? { ...newSource, attachments: [], reference: null };
+
+    setSources(prev => [created, ...prev]);
+    // Picking a source reference re-rates this row, and the reference itself may
+    // have had its rating mirrored, so refresh the rest too.
+    await reloadQuietly();
+    return created;
   };
 
   const updateSource = async (id: string, params: Partial<{
@@ -55,12 +79,14 @@ export function useSources(caseId: string | null) {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    referenceSourceId: string;
+    referenceMetaSourceId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => {
     const updated = await sourcesApi.update(id, params);
-    setSources(prev => prev.map(s => (s.id === id ? { ...s, ...updated } : s)));
+    await reloadQuietly();
     return updated;
   };
 
@@ -136,6 +162,7 @@ export function useSources(caseId: string | null) {
     loading,
     error,
     loadSources,
+    reloadQuietly,
     createSource,
     updateSource,
     deleteSource,

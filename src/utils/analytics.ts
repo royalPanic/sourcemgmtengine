@@ -90,6 +90,18 @@ function bucketOf(source: SourceWithAttachments): StanceBucket {
   return source.stance ?? 'none';
 }
 
+/**
+ * True when a source cites another, which makes it a report *of* something
+ * rather than independent evidence.
+ *
+ * Such sources are excluded from every dashboard statistic: ten outlets
+ * repeating one core source would otherwise inflate both the source count and
+ * the apparent weight of whatever stance those outlets lean toward.
+ */
+export function isReferenceLinked(source: SourceWithAttachments): boolean {
+  return Boolean(source.reference_source_id || source.reference_meta_source_id);
+}
+
 function mean(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -174,17 +186,20 @@ function summarizeCredibility(
 /**
  * Computes per-stance Admiralty averages for an event.
  *
- * Sources with no stance fall into the `none` bucket so the totals always
- * reconcile with the source count.
+ * Reference-linked sources are dropped entirely — see [`isReferenceLinked`].
+ * Remaining sources with no stance fall into the `none` bucket so the totals
+ * always reconcile with the source count that is actually being measured.
  */
 export function computeEventAnalytics(
   sources: SourceWithAttachments[],
   options: AnalyticsOptions
 ): EventAnalytics {
+  const independent = sources.filter(source => !isReferenceLinked(source));
+
   const grouped = new Map<StanceBucket, SourceWithAttachments[]>();
   for (const bucket of STANCE_BUCKETS) grouped.set(bucket, []);
 
-  for (const source of sources) {
+  for (const source of independent) {
     grouped.get(bucketOf(source))!.push(source);
   }
 
@@ -199,12 +214,12 @@ export function computeEventAnalytics(
   });
 
   return {
-    totalSources: sources.length,
+    totalSources: independent.length,
     unassigned: grouped.get('none')!.length,
     byStance,
     overall: {
-      reliability: summarizeReliability(sources, options),
-      credibility: summarizeCredibility(sources, options),
+      reliability: summarizeReliability(independent, options),
+      credibility: summarizeCredibility(independent, options),
     },
   };
 }

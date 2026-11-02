@@ -18,7 +18,13 @@ mod rating_tests;
 #[cfg(test)]
 mod rating_sql_tests;
 
-use commands::{cases, files, sources};
+#[cfg(test)]
+mod reference_tests;
+
+#[cfg(test)]
+mod migration_tests;
+
+use commands::{cases, files, meta_sources, sources};
 use database::connection::init_sql_plugin;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,6 +49,10 @@ pub fn run() {
             sources::delete_source,
             sources::add_source_attachment,
             sources::delete_source_attachment,
+            meta_sources::create_meta_source,
+            meta_sources::get_meta_sources,
+            meta_sources::update_meta_source,
+            meta_sources::delete_meta_source,
             files::save_attachment,
             files::import_attachment,
             files::read_attachment,

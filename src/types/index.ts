@@ -33,6 +33,45 @@ export interface SourceCustomMetadata {
   [key: string]: string | number | boolean | null | undefined;
 }
 
+/** What a meta source represents. */
+export type MetaSourceKind = 'person' | 'organization' | 'other';
+
+/**
+ * A global, reusable entity — a news agency, an official, a spokesperson.
+ *
+ * Meta sources exist outside any single case so the same entity is described
+ * once and cited from anywhere. Their Admiralty rating is what a citing source
+ * inherits.
+ */
+export interface MetaSource {
+  id: string;
+  name: string;
+  kind: MetaSourceKind;
+  description: string | null;
+  url: string | null;
+  reliability_code: ReliabilityCode | null;
+  credibility_code: CredibilityCode | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A meta source plus how many sources cite it. */
+export interface MetaSourceSummary extends MetaSource {
+  citation_count: number;
+}
+
+/** Which table a source's reference points at. */
+export type ReferenceKind = 'source' | 'meta';
+
+/** A resolved reference, labelled for display. */
+export interface SourceReference {
+  kind: ReferenceKind;
+  id: string;
+  label: string;
+  reliability_code: ReliabilityCode | null;
+  credibility_code: CredibilityCode | null;
+}
+
 export interface Source {
   id: string;
   case_id: string;
@@ -43,6 +82,10 @@ export interface Source {
   reliability_code: ReliabilityCode | null;
   credibility_code: CredibilityCode | null;
   stance: Stance | null;
+  /** Sibling source in the same container this source reports on. */
+  reference_source_id: string | null;
+  /** Global meta source this source reports on. Mutually exclusive with the above. */
+  reference_meta_source_id: string | null;
   /** Optional calendar date the source itself refers to, `YYYY-MM-DD`. */
   source_date: string | null;
   /** Optional wall-clock time, `HH:MM`. Requires `source_date`. */
@@ -93,6 +136,8 @@ export function mediaKind(attachment: SourceAttachment): MediaKind {
 
 export interface SourceWithAttachments extends Source {
   attachments: SourceAttachment[];
+  /** Resolved reference, so the UI can label a citation without another call. */
+  reference: SourceReference | null;
 }
 
 export interface CaseWithDetails extends Case {

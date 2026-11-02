@@ -9,8 +9,11 @@ use crate::validation::{
     is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
     validate_reliability_patch,
 };
+use crate::commands::references::{
+    propagate_rating, reference_rating, resolve_reference, validate_reference, ReferenceInput,
+};
 
-const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, source_date, source_time, custom_metadata, created_at, updated_at";
+const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at";
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
@@ -25,6 +28,8 @@ fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
         reliability_code: row.get("reliability_code"),
         credibility_code: row.get("credibility_code"),
         stance: stance_str.as_deref().and_then(Stance::from_db),
+        reference_source_id: row.get("reference_source_id"),
+        reference_meta_source_id: row.get("reference_meta_source_id"),
         source_date: row.get("source_date"),
         source_time: row.get("source_time"),
         custom_metadata: row.get("custom_metadata"),
@@ -75,8 +80,14 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
 
     let source = source_from_row(&row);
     let attachments = fetch_attachments(app, &source.id).await?;
+    let reference = resolve_reference(
+        &pool,
+        source.reference_source_id.as_deref(),
+        source.reference_meta_source_id.as_deref(),
+    )
+    .await?;
 
-    Ok(Some(SourceWithAttachments { source, attachments }))
+    Ok(Some(SourceWithAttachments { source, attachments, reference }))
 }
 
 /// A stance only makes sense on an event. Sources on plain cases must leave it
@@ -140,6 +151,8 @@ pub async fn create_source(
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
     stance: Option<Stance>,
+    reference_source_id: Option<String>,
+    reference_meta_source_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Value,
@@ -159,7 +172,9 @@ pub async fn create_source(
     validate_source_datetime(&source_date, &source_time)?;
 
     let pool = pool::pool(&app).await?;
-    let source = Source::new(
+    let reference = ReferenceInput::new(reference_source_id, reference_meta_source_id);
+
+    let mut source = Source::new(
         case_id,
         title,
         source_type,
@@ -168,15 +183,32 @@ pub async fn create_source(
         reliability_code,
         credibility_code,
         stance,
+        reference.source_id.clone(),
+        reference.meta_source_id.clone(),
         source_date,
         source_time,
         custom_metadata,
     );
+
+    // A citing source mirrors its reference: same rating, and no stance, so
+    // repeated reporting cannot look like independent corroboration.
+    if reference.is_set() {
+        validate_reference(&pool, &source.case_id, &source.id, &reference)
+            .await
+            .map_err(|e| e.message().to_string())?;
+        let (reliability, credibility) = reference_rating(&pool, &reference).await?;
+        source.reliability_code = reliability;
+        source.credibility_code = credibility;
+        source.stance = None;
+    }
+
+    validate_stance(&app, &source.case_id, &source.stance).await?;
+
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, source_date, source_time, custom_metadata, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&source.id)
     .bind(&source.case_id)
@@ -187,6 +219,8 @@ pub async fn create_source(
     .bind(&source.reliability_code)
     .bind(source.credibility_code)
     .bind(source.stance.as_ref().map(|s| s.as_db()))
+    .bind(&source.reference_source_id)
+    .bind(&source.reference_meta_source_id)
     .bind(&source.source_date)
     .bind(&source.source_time)
     .bind(&source.custom_metadata)
@@ -219,7 +253,13 @@ pub async fn get_sources(
     for row in rows {
         let source = source_from_row(&row);
         let attachments = fetch_attachments(&app, &source.id).await?;
-        sources.push(SourceWithAttachments { source, attachments });
+        let reference = resolve_reference(
+            &pool,
+            source.reference_source_id.as_deref(),
+            source.reference_meta_source_id.as_deref(),
+        )
+        .await?;
+        sources.push(SourceWithAttachments { source, attachments, reference });
     }
 
     Ok(sources)
@@ -241,6 +281,8 @@ pub async fn update_source(
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
     stance: Option<Stance>,
+    reference_source_id: Option<String>,
+    reference_meta_source_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Option<Value>,
@@ -252,14 +294,16 @@ pub async fn update_source(
         .await?
         .ok_or("Source not found".to_string())?;
 
-    validate_stance(&app, &existing.source.case_id, &stance).await?;
-
     // Ratings are optional. An empty string (reliability) or 0 (credibility)
     // means "clear", matching how the create path treats an unrated source.
     validate_reliability_patch(&reliability_code)?;
     validate_credibility_patch(credibility_code)?;
-    let reliability_code = patch_optional(reliability_code);
-    let credibility_code = patch_optional_int(credibility_code);
+    let mut reliability_code = patch_optional(reliability_code);
+    let mut credibility_code = patch_optional_int(credibility_code);
+
+    // `Some` on the outer option means "touch the column"; the inner value is
+    // what to store, with `None` meaning NULL.
+    let mut stance_patch: Option<Option<Stance>> = stance.map(Some);
 
     let source_date = patch_optional(source_date);
     let source_time = patch_optional(source_time);
@@ -275,6 +319,43 @@ pub async fn update_source(
         None => existing.source.source_time.clone(),
     };
     validate_source_datetime(&effective_date, &effective_time)?;
+
+    // Reference patch: omitted leaves the stored reference alone, an empty
+    // string clears it, anything else sets it. Switching from a source
+    // reference to a meta reference therefore sends `""` plus the new meta id.
+    let next_reference = ReferenceInput::new(
+        match reference_source_id {
+            None => existing.source.reference_source_id.clone(),
+            Some(value) => non_empty(value),
+        },
+        match reference_meta_source_id {
+            None => existing.source.reference_meta_source_id.clone(),
+            Some(value) => non_empty(value),
+        },
+    );
+    let reference_changed = next_reference.source_id != existing.source.reference_source_id
+        || next_reference.meta_source_id != existing.source.reference_meta_source_id;
+
+    if next_reference.is_set() {
+        validate_reference(&pool, &existing.source.case_id, &id, &next_reference)
+            .await
+            .map_err(|e| e.message().to_string())?;
+
+        // Live sync: the citing source always mirrors its reference. A report
+        // of a statement does not change the reliability of the source or the
+        // credibility of the information, so any supplied rating is ignored.
+        let (reliability, credibility) = reference_rating(&pool, &next_reference).await?;
+        reliability_code = Some(reliability);
+        credibility_code = Some(credibility);
+
+        // A citing source never carries a stance: repeated reporting of one
+        // core source must not read as independent corroboration.
+        stance_patch = Some(None);
+    }
+
+    if let Some(Some(stance)) = &stance_patch {
+        validate_stance(&app, &existing.source.case_id, &Some(stance.clone())).await?;
+    }
 
     let mut updates: Vec<&str> = Vec::new();
     if title.is_some() {
@@ -295,8 +376,12 @@ pub async fn update_source(
     if credibility_code.is_some() {
         updates.push("credibility_code = ?");
     }
-    if stance.is_some() {
+    if stance_patch.is_some() {
         updates.push("stance = ?");
+    }
+    if reference_changed {
+        updates.push("reference_source_id = ?");
+        updates.push("reference_meta_source_id = ?");
     }
     if source_date.is_some() {
         updates.push("source_date = ?");
@@ -311,6 +396,10 @@ pub async fn update_source(
     if updates.is_empty() {
         return Ok(existing.source);
     }
+
+    let rating_touched = reliability_code.is_some()
+        || credibility_code.is_some()
+        || reference_changed;
 
     updates.push("updated_at = ?");
     let query = format!("UPDATE sources SET {} WHERE id = ?", updates.join(", "));
@@ -335,8 +424,12 @@ pub async fn update_source(
     if let Some(credibility_code) = credibility_code {
         statement = statement.bind(credibility_code);
     }
-    if let Some(stance) = stance {
-        statement = statement.bind(stance.as_db().to_string());
+    if let Some(stance) = stance_patch {
+        statement = statement.bind(stance.map(|s| s.as_db().to_string()));
+    }
+    if reference_changed {
+        statement = statement.bind(&next_reference.source_id);
+        statement = statement.bind(&next_reference.meta_source_id);
     }
     if let Some(source_date) = source_date {
         statement = statement.bind(source_date);
@@ -355,15 +448,39 @@ pub async fn update_source(
         .await
         .map_err(|e| format!("Failed to update source: {}", e))?;
 
+    // Any source that cites this one mirrors its rating, so a rating change
+    // here has to reach them.
+    if rating_touched {
+        propagate_rating(&pool, &id, &mut Vec::new()).await?;
+    }
+
     fetch_source(&app, &id)
         .await?
         .map(|s| s.source)
         .ok_or("Source not found after update".to_string())
 }
 
+/// Trims a patch value, treating blank as "no value".
+fn non_empty(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[command]
 pub async fn delete_source(app: AppHandle, id: String) -> Result<(), String> {
     let pool = pool::pool(&app).await?;
+
+    // Sources citing this one keep the rating they inherited; only the link is
+    // cleared, matching the schema's ON DELETE SET NULL.
+    sqlx::query("UPDATE sources SET reference_source_id = NULL WHERE reference_source_id = ?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to clear source citations: {}", e))?;
 
     sqlx::query("DELETE FROM source_attachments WHERE source_id = ?")
         .bind(&id)

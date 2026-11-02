@@ -1,5 +1,5 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, ContainerKind, Stance } from '../types';
+import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, ContainerKind, Stance, MetaSource, MetaSourceKind, MetaSourceSummary } from '../types';
 
 // Tauri v2 maps Rust snake_case command parameters to camelCase on the JS side,
 // so every argument below must be camelCase.
@@ -58,6 +58,8 @@ export const sourcesApi = {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    referenceSourceId?: string;
+    referenceMetaSourceId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -70,6 +72,8 @@ export const sourcesApi = {
     reliabilityCode: params.reliabilityCode,
     credibilityCode: params.credibilityCode,
     stance: params.stance,
+    referenceSourceId: params.referenceSourceId,
+    referenceMetaSourceId: params.referenceMetaSourceId,
     sourceDate: params.sourceDate,
     sourceTime: params.sourceTime,
     customMetadata: params.customMetadata ?? {},
@@ -89,6 +93,8 @@ export const sourcesApi = {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    referenceSourceId: string;
+    referenceMetaSourceId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -101,6 +107,9 @@ export const sourcesApi = {
     reliabilityCode: params.reliabilityCode,
     credibilityCode: params.credibilityCode,
     stance: params.stance,
+    // An empty string clears the reference; omitting the key leaves it alone.
+    referenceSourceId: params.referenceSourceId,
+    referenceMetaSourceId: params.referenceMetaSourceId,
     // An empty string clears the stored value; omitting the key leaves it alone.
     sourceDate: params.sourceDate,
     sourceTime: params.sourceTime,
@@ -126,6 +135,47 @@ export const sourcesApi = {
   
   deleteAttachment: (id: string) => 
     invoke<void>('delete_source_attachment', { id }),
+};
+
+export const metaSourcesApi = {
+  getAll: () =>
+    invoke<MetaSourceSummary[]>('get_meta_sources'),
+
+  create: (params: {
+    name: string;
+    kind?: MetaSourceKind;
+    description?: string;
+    url?: string;
+    reliabilityCode?: string;
+    credibilityCode?: number;
+  }) => invoke<MetaSource>('create_meta_source', {
+    name: params.name,
+    kind: params.kind,
+    description: params.description,
+    url: params.url,
+    reliabilityCode: params.reliabilityCode,
+    credibilityCode: params.credibilityCode,
+  }),
+
+  update: (id: string, params: Partial<{
+    name: string;
+    kind: MetaSourceKind;
+    description: string;
+    url: string;
+    reliabilityCode: string;
+    credibilityCode: number;
+  }>) => invoke<MetaSource>('update_meta_source', {
+    id,
+    name: params.name,
+    kind: params.kind,
+    description: params.description,
+    url: params.url,
+    reliabilityCode: params.reliabilityCode,
+    credibilityCode: params.credibilityCode,
+  }),
+
+  delete: (id: string) =>
+    invoke<void>('delete_meta_source', { id }),
 };
 
 export const filesApi = {

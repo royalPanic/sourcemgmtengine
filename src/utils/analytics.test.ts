@@ -4,6 +4,7 @@ import {
   scoreToReliabilityLabel,
   scoreToCredibilityLabel,
   formatAverage,
+  isReferenceLinked,
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -24,12 +25,15 @@ function source(
     reliability_code: reliability,
     credibility_code: credibility,
     stance,
+    reference_source_id: null,
+    reference_meta_source_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     attachments: [],
+    reference: null,
   };
 }
 
@@ -168,6 +172,53 @@ describe('computeEventAnalytics', () => {
     expect(result.totalSources).toBe(0);
     expect(result.overall.reliability.average).toBeNull();
     expect(result.byStance).toHaveLength(4);
+  });
+});
+
+describe('reference-linked sources', () => {
+  function citing(overrides: Partial<SourceWithAttachments>): SourceWithAttachments {
+    return { ...source('supports', 'A', 1), ...overrides };
+  }
+
+  it('are excluded from every dashboard statistic', () => {
+    // One core source plus five outlets echoing it. Counting the echoes would
+    // turn a single corroboration into six.
+    const sources = [
+      source('supports', 'A', 1),
+      ...Array.from({ length: 5 }, () =>
+        citing({ reference_meta_source_id: 'meta-1', stance: null })
+      ),
+    ];
+
+    const result = computeEventAnalytics(sources, opts);
+
+    expect(result.totalSources).toBe(1);
+    expect(result.overall.reliability.rated).toBe(1);
+    expect(result.byStance.find(s => s.bucket === 'supports')?.total).toBe(1);
+    expect(result.unassigned).toBe(0);
+  });
+
+  it('are excluded whether they cite a source or a meta source', () => {
+    const sources = [
+      source('refutes', 'B', 2),
+      citing({ reference_source_id: 'source-1', stance: null }),
+      citing({ reference_meta_source_id: 'meta-1', stance: null }),
+    ];
+
+    expect(computeEventAnalytics(sources, opts).totalSources).toBe(1);
+  });
+
+  it('do not inflate the unassigned bucket', () => {
+    // A citing source has no stance by design; that is not the same as a
+    // source the analyst forgot to classify.
+    const sources = [source(null, 'C', 3), citing({ reference_meta_source_id: 'meta-1' })];
+    expect(computeEventAnalytics(sources, opts).unassigned).toBe(1);
+  });
+
+  it('are detected by either reference column', () => {
+    expect(isReferenceLinked(source(null, null, null))).toBe(false);
+    expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
+    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(true);
   });
 });
 

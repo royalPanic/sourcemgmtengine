@@ -14,6 +14,8 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 - **NATO Admiralty System** — Source Reliability (A–F) and Information Credibility (1–6), each with an inline definition drawn from NATO STANAG 2064 conventions.
 - **Evidence attachments** — attach files to a source, open them in the system default application, or delete them. Files are stored under a per-source folder using relative paths so the workspace stays portable.
 - **Expandable metadata** — arbitrary key/value pairs are stored as JSON in `sources.custom_metadata`, so specialised fields (TLP markings, coordinates, social handles) never require a schema migration.
+- **Meta sources** — reusable people and organisations (news agencies, officials, spokespeople) that persist across every case and event.
+- **Source references** — a source can cite another source or a meta source to record "this is a report *of* that". The citing source inherits its reference's Admiralty rating and carries no stance, so repeated reporting never counts as independent corroboration.
 - **Dark-mode-first UI** — a tactical zinc/amber palette built for multi-monitor analysis.
 
 ---
@@ -156,16 +158,43 @@ Attachments are written to `attachments/<source_id>/` inside the same directory.
 ### Schema
 
 ```sql
-cases              (id, title, description, created_at, updated_at)
+cases              (id, title, description, created_at, updated_at,
+                    kind, event_date, event_time)
 case_notes         (id, case_id UNIQUE, content, updated_at)
+meta_sources       (id, name, kind, description, url,
+                    reliability_code, credibility_code, created_at, updated_at)
 sources            (id, case_id, title, source_type, url, raw_text,
-                    reliability_code, credibility_code, custom_metadata,
+                    reliability_code, credibility_code, stance,
+                    reference_source_id, reference_meta_source_id,
+                    source_date, source_time, custom_metadata,
                     created_at, updated_at)
 source_attachments (id, source_id, file_name, relative_path,
                     mime_type, file_size, created_at)
 ```
 
 Migrations are versioned through `tauri-plugin-sql` and tracked in `_sqlx_migrations`. Foreign keys declare `ON DELETE CASCADE`, and the delete commands also remove children explicitly so behaviour does not depend on the connection-level `PRAGMA foreign_keys` setting.
+
+Reference columns instead use `ON DELETE SET NULL`: deleting a source or meta source blanks the citation link but leaves the citing source — and the rating it inherited — intact.
+
+---
+
+## Meta sources and source references
+
+A **meta source** is a reusable entity — a news agency, an official, a spokesperson — stored once at workspace level and citable from any case or event. Each carries its own Admiralty rating, which is what makes the feature work.
+
+A source may **reference** exactly one of:
+
+| Target | Meaning |
+| :--- | :--- |
+| Another source in the same container | "This capture reports on that capture" |
+| A meta source | "This capture reports on that person or organisation" |
+
+Two rules follow from the intent of the feature and are enforced in the backend, not just the UI:
+
+1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the reference — or a meta source — pushes the new rating down every citation, including citations of citations.
+2. **A citing source carries no stance.** Ten outlets repeating one core source must not read as ten independent corroborations, so the stance is forced to none and the control is disabled. Reference-linked sources are also excluded from every event dashboard statistic.
+
+Cycles (`A → B → A`) and cross-container references are rejected. The "at most one reference" rule is additionally enforced by SQLite triggers so it holds for any future writer.
 
 ---
 

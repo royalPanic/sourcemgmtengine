@@ -4,7 +4,7 @@ import { SourcesGrid } from './SourcesGrid';
 import { EventHeader } from './EventHeader';
 import { Dashboard } from './Dashboard';
 import { useCaseNote } from '../hooks/useCases';
-import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary } from '../types';
 
 type Tab = 'notes' | 'sources' | 'dashboard';
 
@@ -12,6 +12,7 @@ interface MainContentProps {
   container: Case | null;
   sources: SourceWithAttachments[];
   sourcesLoading: boolean;
+  metaSources: MetaSourceSummary[];
   onUpdateContainer: (id: string, params: Partial<{
     title: string;
     description: string;
@@ -26,6 +27,8 @@ interface MainContentProps {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    referenceSourceId?: string;
+    referenceMetaSourceId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -38,6 +41,8 @@ interface MainContentProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    referenceSourceId: string;
+    referenceMetaSourceId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -53,6 +58,7 @@ export function MainContent({
   container,
   sources,
   sourcesLoading,
+  metaSources,
   onUpdateContainer,
   onCreateSource,
   onUpdateSource,
@@ -161,6 +167,7 @@ export function MainContent({
             sources={sources}
             loading={sourcesLoading}
             isEvent={isEvent}
+            metaSources={metaSources}
             onCreateSource={onCreateSource}
             onUpdateSource={onUpdateSource}
             onDeleteSource={onDeleteSource}
