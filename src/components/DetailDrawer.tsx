@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance } from '../types';
 import {
   SOURCE_TYPES,
@@ -12,6 +12,15 @@ import {
 } from '../types';
 import { MediaPreview } from './MediaPreview';
 import { pickFile, type PickerMode } from '../utils/filePicker';
+import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
+import {
+  COORDINATE_FORMATS,
+  FORMAT_LABELS,
+  FORMAT_HINTS,
+  formatCoordinateIn,
+  parseCoordinateIn,
+  type CoordinateFormat,
+} from '../utils/coordinates';
 
 interface DetailDrawerProps {
   isOpen: boolean;
@@ -52,6 +61,17 @@ export function DetailDrawer({
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
   const [stance, setStance] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [coordFormat, setCoordFormat] = useState<CoordinateFormat>('dd');
+  // Canonical decimal degrees. The text field is only a rendering of this, so
+  // switching notation never accumulates rounding error.
+  const [coord, setCoord] = useState<{ lat: number; lon: number } | null>(null);
+  const [coordText, setCoordText] = useState('');
+  const [coordError, setCoordError] = useState<string | null>(null);
+  // Lets the source-reset effect read the current notation without re-running
+  // every time the user switches format.
+  const coordFormatRef = useRef<CoordinateFormat>('dd');
+  coordFormatRef.current = coordFormat;
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -66,6 +86,13 @@ export function DetailDrawer({
     setReliabilityCode(source.reliability_code ?? '');
     setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
     setStance(source.stance ?? '');
+
+    const location = readLocation(source.custom_metadata);
+    setCoord(location ? { lat: location.lat, lon: location.lon } : null);
+    setCoordText(location ? safeFormat(location.lat, location.lon, coordFormatRef.current) : '');
+    setCoordError(null);
+    setLocationLabel(location?.label ?? '');
+
     setUploadError(null);
     setSaveError(null);
   }, [source]);
@@ -81,8 +108,67 @@ export function DetailDrawer({
 
   if (!isOpen || !source) return null;
 
+  /**
+   * Switches notation and rewrites the field in place, so the value can be
+   * copied straight into other mapping software.
+   */
+  const handleFormatChange = (next: CoordinateFormat) => {
+    if (next === coordFormat) return;
+
+    // Prefer the canonical value; fall back to whatever is typed so a
+    // hand-entered coordinate still converts.
+    const source = coord ?? parseCoordinateIn(coordText, coordFormat);
+    setCoordFormat(next);
+    setCoordError(null);
+
+    if (!source) {
+      if (coordText.trim() !== '') {
+        setCoordError(`Could not read that as ${FORMAT_LABELS[coordFormat]}.`);
+      }
+      return;
+    }
+    if (!isValidCoordinate(source.lat, source.lon)) {
+      setCoordError('That coordinate is out of range.');
+      return;
+    }
+
+    setCoord(source);
+    setCoordText(safeFormat(source.lat, source.lon, next));
+  };
+
   const handleSave = async () => {
     setSaveError(null);
+
+    // Location is optional, but unparseable input is a mistake worth catching.
+    const hasCoord = coordText.trim() !== '';
+    let customMetadata: SourceCustomMetadata | undefined;
+    if (hasCoord) {
+      const parsed = coord ?? parseCoordinateIn(coordText, coordFormat);
+      if (!parsed) {
+        setSaveError(`Could not read that as ${FORMAT_LABELS[coordFormat]}.`);
+        return;
+      }
+      if (!isValidCoordinate(parsed.lat, parsed.lon)) {
+        setSaveError('Latitude must be -90…90 and longitude -180…180.');
+        return;
+      }
+
+      const existing = parseMetadata(source.custom_metadata);
+      customMetadata = {
+        ...existing,
+        [LAT_KEY]: parsed.lat,
+        [LON_KEY]: parsed.lon,
+        [LOCATION_LABEL_KEY]: locationLabel.trim() || null,
+      };
+    } else {
+      // Clearing the fields removes the location keys but keeps other metadata.
+      const existing = parseMetadata(source.custom_metadata);
+      if (LAT_KEY in existing || LON_KEY in existing || LOCATION_LABEL_KEY in existing) {
+        const { [LAT_KEY]: _lat, [LON_KEY]: _lon, [LOCATION_LABEL_KEY]: _label, ...rest } = existing;
+        customMetadata = rest;
+      }
+    }
+
     setSaving(true);
     try {
       await onUpdate(source.id, {
@@ -93,6 +179,7 @@ export function DetailDrawer({
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
         stance: isEvent && stance ? (stance as Stance) : undefined,
+        customMetadata,
       });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -289,6 +376,67 @@ export function DetailDrawer({
             )}
           </section>
 
+          <section className="card p-4">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Location</h3>
+            <p className="text-[11px] text-zinc-500 mb-3">
+              Optional. Geolocated sources appear on the event dashboard map.
+            </p>
+
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Coordinates</label>
+              <input
+                type="text"
+                value={coordText}
+                onChange={(e) => {
+                  const text = e.target.value;
+                  setCoordText(text);
+                  setCoordError(null);
+                  // Keep the canonical value in step with what is typed.
+                  setCoord(parseCoordinateIn(text, coordFormat));
+                }}
+                className="input font-mono"
+                placeholder={FORMAT_HINTS[coordFormat]}
+                spellCheck={false}
+              />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {COORDINATE_FORMATS.map(format => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => handleFormatChange(format)}
+                    aria-pressed={coordFormat === format}
+                    title={`Show as ${FORMAT_LABELS[format]} (${FORMAT_HINTS[format]})`}
+                    className={
+                      coordFormat === format
+                        ? 'px-2 py-1 rounded text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'px-2 py-1 rounded text-[11px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700 hover:text-zinc-200 hover:border-zinc-600'
+                    }
+                  >
+                    {FORMAT_LABELS[format]}
+                  </button>
+                ))}
+              </div>
+              {coordError && <p className="mt-1.5 text-[11px] text-red-400">{coordError}</p>}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Place name</label>
+              <input
+                type="text"
+                value={locationLabel}
+                onChange={(e) => setLocationLabel(e.target.value)}
+                className="input"
+                placeholder="London, UK"
+              />
+            </div>
+
+            {coord && isValidCoordinate(coord.lat, coord.lon) && (
+              <p className="mt-2 text-[11px] text-zinc-500">
+                {formatCoordinate(coord.lat, coord.lon)}
+              </p>
+            )}
+          </section>
+
           <section>
             <h3 className="text-sm font-semibold text-zinc-200 mb-2">Custom Metadata</h3>
             <pre className="text-xs text-zinc-400 bg-zinc-950 rounded-lg p-3 overflow-x-auto">
@@ -319,4 +467,29 @@ function formatMetadata(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+/**
+ * Formats a coordinate, falling back to decimal degrees when the requested
+ * notation cannot represent it (MGRS stops at 84°N, for example).
+ */
+function safeFormat(lat: number, lon: number, format: CoordinateFormat): string {
+  try {
+    return formatCoordinateIn(lat, lon, format);
+  } catch {
+    return formatCoordinateIn(lat, lon, 'dd');
+  }
+}
+
+/** Parses stored metadata, tolerating malformed JSON. */
+function parseMetadata(raw: string): SourceCustomMetadata {
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as SourceCustomMetadata;
+    }
+  } catch {
+    // fall through
+  }
+  return {};
 }

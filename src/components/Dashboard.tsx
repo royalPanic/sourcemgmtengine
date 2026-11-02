@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { SourceWithAttachments } from '../types';
+import { SourceMap } from './SourceMap';
 import {
   computeEventAnalytics,
   formatAverage,
@@ -116,6 +117,14 @@ export function Dashboard({ sources, loading }: DashboardProps) {
               dimension="credibility"
               max={6}
             />
+          </section>
+
+          <section className="card p-4 xl:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-zinc-200">Source Locations</h3>
+              <span className="text-[11px] text-zinc-500">Auto-fitted to pins</span>
+            </div>
+            <SourceMap sources={sources} />
           </section>
         </div>
 
