@@ -190,8 +190,10 @@ pub async fn create_source(
         custom_metadata,
     );
 
-    // A citing source mirrors its reference: same rating, and no stance, so
-    // repeated reporting cannot look like independent corroboration.
+    // A citing source mirrors its reference's rating. Only a reference to
+    // another source also suppresses the stance: that is a duplicate capture of
+    // one piece of evidence, whereas a meta source can express several
+    // viewpoints across different captures.
     if reference.is_set() {
         validate_reference(&pool, &source.case_id, &source.id, &reference)
             .await
@@ -199,7 +201,9 @@ pub async fn create_source(
         let (reliability, credibility) = reference_rating(&pool, &reference).await?;
         source.reliability_code = reliability;
         source.credibility_code = credibility;
-        source.stance = None;
+        if reference.locks_stance() {
+            source.stance = None;
+        }
     }
 
     validate_stance(&app, &source.case_id, &source.stance).await?;
@@ -348,9 +352,12 @@ pub async fn update_source(
         reliability_code = Some(reliability);
         credibility_code = Some(credibility);
 
-        // A citing source never carries a stance: repeated reporting of one
-        // core source must not read as independent corroboration.
-        stance_patch = Some(None);
+        // Only a reference to another source locks the stance. A meta source
+        // represents an entity that may express several viewpoints, so its
+        // citations stay classifiable and countable.
+        if next_reference.locks_stance() {
+            stance_patch = Some(None);
+        }
     }
 
     if let Some(Some(stance)) = &stance_patch {

@@ -5,6 +5,7 @@ import {
   scoreToCredibilityLabel,
   formatAverage,
   isReferenceLinked,
+  isMetaReferenced,
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -181,12 +182,12 @@ describe('reference-linked sources', () => {
   }
 
   it('are excluded from every dashboard statistic', () => {
-    // One core source plus five outlets echoing it. Counting the echoes would
-    // turn a single corroboration into six.
+    // One core capture plus five sibling captures echoing it. Counting the
+    // echoes would turn a single corroboration into six.
     const sources = [
       source('supports', 'A', 1),
       ...Array.from({ length: 5 }, () =>
-        citing({ reference_meta_source_id: 'meta-1', stance: null })
+        citing({ reference_source_id: 'source-1', stance: null })
       ),
     ];
 
@@ -198,27 +199,46 @@ describe('reference-linked sources', () => {
     expect(result.unassigned).toBe(0);
   });
 
-  it('are excluded whether they cite a source or a meta source', () => {
+  it('are excluded only when they cite a sibling source', () => {
     const sources = [
       source('refutes', 'B', 2),
       citing({ reference_source_id: 'source-1', stance: null }),
-      citing({ reference_meta_source_id: 'meta-1', stance: null }),
     ];
 
     expect(computeEventAnalytics(sources, opts).totalSources).toBe(1);
   });
 
+  it('meta-referenced sources still count', () => {
+    // A wire service publishes many articles, so two captures citing Reuters
+    // are two independent pieces of evidence, not one duplicated.
+    const sources = [
+      source('supports', 'A', 1),
+      citing({ reference_meta_source_id: 'meta-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_meta_source_id: 'meta-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
+    ];
+
+    const result = computeEventAnalytics(sources, opts);
+
+    expect(result.totalSources).toBe(3);
+    expect(result.byStance.find(s => s.bucket === 'supports')?.total).toBe(2);
+    expect(result.byStance.find(s => s.bucket === 'refutes')?.total).toBe(1);
+  });
+
   it('do not inflate the unassigned bucket', () => {
-    // A citing source has no stance by design; that is not the same as a
-    // source the analyst forgot to classify.
-    const sources = [source(null, 'C', 3), citing({ reference_meta_source_id: 'meta-1' })];
+    // A source duplicating a sibling capture has no stance by design; that is
+    // not the same as a source the analyst forgot to classify.
+    const sources = [source(null, 'C', 3), citing({ reference_source_id: 'source-1' })];
     expect(computeEventAnalytics(sources, opts).unassigned).toBe(1);
   });
 
   it('are detected by either reference column', () => {
     expect(isReferenceLinked(source(null, null, null))).toBe(false);
     expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
-    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(true);
+    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(false);
+
+    expect(isMetaReferenced(source(null, null, null))).toBe(false);
+    expect(isMetaReferenced(citing({ reference_meta_source_id: 'b' }))).toBe(true);
+    expect(isMetaReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
   });
 });
 

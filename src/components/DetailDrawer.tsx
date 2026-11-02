@@ -12,7 +12,7 @@ import {
 } from '../types';
 import { MediaPreview } from './MediaPreview';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
+import { ReferenceSelect, locksStance, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
 import type { MetaSourceSummary } from '../types';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
@@ -190,7 +190,7 @@ export function DetailDrawer({
 
     setSaving(true);
     try {
-      const isReferenced = reference.kind !== 'none';
+      const isReferenced = locksStance(reference);
       await onUpdate(source.id, {
         title: title.trim(),
         sourceType,
@@ -200,7 +200,8 @@ export function DetailDrawer({
         // NULL. Sending `undefined` would leave the old value in place.
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
-        // A citing source carries no stance; the backend enforces this too.
+        // A source that duplicates another capture carries no stance; the
+        // backend enforces this too. Meta-referenced sources keep theirs.
         stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
         ...referenceIds(reference),
         // Empty strings clear the stored values.
@@ -310,8 +311,8 @@ export function DetailDrawer({
                 setCredibilityCode(
                   rating?.credibility_code ? String(rating.credibility_code) : ''
                 );
-                // A citing source never carries a stance.
-                if (next.kind !== 'none') setStance('');
+                // Only a duplicate of another capture loses its stance.
+                if (locksStance(next)) setStance('');
               }}
             />
           </section>
@@ -354,13 +355,13 @@ export function DetailDrawer({
             <section className="card p-4">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance on Event</h3>
               <select
-                value={reference.kind !== 'none' ? '' : stance}
+                value={locksStance(reference) ? '' : stance}
                 onChange={(e) => setStance(e.target.value)}
                 className="select"
-                disabled={reference.kind !== 'none'}
+                disabled={locksStance(reference)}
                 title={
-                  reference.kind !== 'none'
-                    ? 'A source that references another source carries no stance'
+                  locksStance(reference)
+                    ? 'A source that duplicates another capture carries no stance'
                     : undefined
                 }
               >
@@ -369,10 +370,10 @@ export function DetailDrawer({
                   <option key={value} value={value}>{STANCE_DEFINITIONS[value].label}</option>
                 ))}
               </select>
-              {reference.kind !== 'none' ? (
+              {locksStance(reference) ? (
                 <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Locked to none while this source references another. Repeated reporting of
-                  one core source must not count as independent corroboration.
+                  Locked to none while this source references another capture. A duplicate must
+                  not count as independent corroboration.
                 </p>
               ) : stance ? (
                 <p className="mt-2 text-xs text-zinc-500 leading-relaxed">

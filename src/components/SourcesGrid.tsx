@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
+import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
 import { formatEventDate } from './Sidebar';
 import { formatUtc } from '../utils/datetime';
 import {
@@ -291,7 +291,7 @@ function NewSourceModal({
     setError(null);
     setSubmitting(true);
     try {
-      const isReferenced = reference.kind !== 'none';
+      const isReferenced = locksStance(reference);
       await onSubmit({
         title: title.trim(),
         sourceType,
@@ -299,7 +299,8 @@ function NewSourceModal({
         rawText: rawText.trim() || undefined,
         reliabilityCode: reliabilityCode || undefined,
         credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
-        // A citing source carries no stance; the backend enforces this too.
+        // A source that duplicates another capture carries no stance; the
+        // backend enforces this too. Meta-referenced sources keep theirs.
         stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
         ...referenceIds(reference),
         sourceDate: sourceDate || undefined,
@@ -391,7 +392,7 @@ function NewSourceModal({
                 setCredibilityCode(
                   rating?.credibility_code ? String(rating.credibility_code) : ''
                 );
-                if (next.kind !== 'none') setStance('');
+                if (locksStance(next)) setStance('');
               }}
             />
           </div>
@@ -433,13 +434,13 @@ function NewSourceModal({
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Stance on Event</label>
               <select
-                value={reference.kind !== 'none' ? '' : stance}
+                value={locksStance(reference) ? '' : stance}
                 onChange={(e) => setStance(e.target.value)}
                 className="select"
-                disabled={reference.kind !== 'none'}
+                disabled={locksStance(reference)}
                 title={
-                  reference.kind !== 'none'
-                    ? 'A source that references another source carries no stance'
+                  locksStance(reference)
+                    ? 'A source that duplicates another capture carries no stance'
                     : undefined
                 }
               >
@@ -450,9 +451,9 @@ function NewSourceModal({
                   </option>
                 ))}
               </select>
-              {reference.kind !== 'none' ? (
+              {locksStance(reference) ? (
                 <p className="mt-2 text-xs text-zinc-500">
-                  Locked to none while this source references another.
+                  Locked to none: this duplicates another capture.
                 </p>
               ) : stance ? (
                 <p className="mt-2 text-xs text-zinc-500">

@@ -14,6 +14,17 @@ export interface ReferenceSelection {
 
 export const NO_REFERENCE: ReferenceSelection = { kind: 'none', id: '' };
 
+/**
+ * True when the selection suppresses the stance.
+ *
+ * A sibling capture duplicates one piece of evidence, so it must not express a
+ * stance. A meta source is an entity that may publish several viewpoints, so
+ * its citations stay classifiable.
+ */
+export function locksStance(selection: ReferenceSelection): boolean {
+  return selection.kind === 'source';
+}
+
 /** Reads the stored reference columns into a single selection. */
 export function selectionOf(source: {
   reference_source_id: string | null;
@@ -150,13 +161,15 @@ export function ReferenceSelect({
       {value.kind === 'none' ? (
         <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
           {hasOptions
-            ? 'Use this when the source reports on a person, organisation, or another capture. Its rating is inherited and it will not count as independent evidence.'
+            ? 'Use this when the source reports on a person, organisation, or another capture. Its rating is inherited from the reference.'
             : 'No other sources or meta sources exist yet.'}
         </p>
       ) : (
         <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
-          Rating is inherited from the reference and stays in sync. Stance is disabled:
-          repeated reporting of one source must not look like independent corroboration.
+          Rating is inherited from the reference and stays in sync.{' '}
+          {locksStance(value)
+            ? 'Stance is disabled: this duplicates another capture, so it must not count as independent corroboration.'
+            : 'Stance stays editable: a meta source can express several viewpoints.'}
         </p>
       )}
     </div>

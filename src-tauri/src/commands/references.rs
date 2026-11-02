@@ -74,6 +74,15 @@ impl ReferenceInput {
     pub fn is_set(&self) -> bool {
         self.source_id.is_some() || self.meta_source_id.is_some()
     }
+
+    /// True when the reference is to another source rather than a meta source.
+    ///
+    /// The distinction drives the stance rule: a sibling capture is a duplicate
+    /// of one piece of evidence, so it must not carry a stance, whereas a meta
+    /// source may express several viewpoints across different captures.
+    pub fn locks_stance(&self) -> bool {
+        self.source_id.is_some()
+    }
 }
 
 /// Walks the reference chain from `source_id` looking for `needle`.
@@ -291,6 +300,9 @@ pub fn propagate_rating<'a>(
 
         let now = Utc::now().to_rfc3339();
         for child in &children {
+            // The stance is cleared here because citing *another source* means
+            // duplicating one piece of evidence. Meta-source citations are handled
+            // by `propagate_meta_rating`, which leaves the stance alone.
             sqlx::query(
                 "UPDATE sources SET reliability_code = ?, credibility_code = ?, stance = NULL, updated_at = ? WHERE id = ?",
             )
@@ -330,8 +342,10 @@ pub async fn propagate_meta_rating(
     };
 
     let now = Utc::now().to_rfc3339();
+    // The stance is deliberately untouched: a meta source can express several
+    // viewpoints, so its citations remain independently classifiable.
     sqlx::query(
-        "UPDATE sources SET reliability_code = ?, credibility_code = ?, stance = NULL, updated_at = ? WHERE reference_meta_source_id = ?",
+        "UPDATE sources SET reliability_code = ?, credibility_code = ?, updated_at = ? WHERE reference_meta_source_id = ?",
     )
     .bind(&reliability)
     .bind(credibility)

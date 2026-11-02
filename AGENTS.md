@@ -118,7 +118,7 @@ These two features are coupled; changing one means checking the other.
 
 - **Rating inheritance is live.** A citing source mirrors its reference's rating, and `propagate_rating` / `propagate_meta_rating` push changes down the chain. Any new write path that changes a rating must call them, or citations silently drift.
 
-- **A citing source never carries a stance.** This is intentional: repeated reporting of one core source must not read as independent corroboration. Reference-linked sources are excluded from every event dashboard statistic (`isReferenceLinked` in `utils/analytics.ts`).
+- **Only a *source* reference locks the stance.** Citing a sibling source duplicates one piece of evidence, so the stance is forced to none and the source is excluded from every event dashboard statistic (`isReferenceLinked` in `utils/analytics.ts`). Citing a **meta source** keeps the stance editable and the source countable, because one entity (a wire service) can express several viewpoints across different captures. `ReferenceInput::locks_stance` and `locksStance` in `ReferenceSelect.tsx` are the shared predicates — use them rather than re-deriving the condition.
 
 ## 4. UI / UX Design System & Component Guidelines
 ### Dark Mode & Visual Styling

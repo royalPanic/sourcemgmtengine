@@ -294,11 +294,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn editing_a_meta_source_propagates_to_every_citation() {
+    async fn editing_a_meta_source_propagates_the_rating_but_keeps_the_stance() {
         let pool = pool().await;
         insert_meta(&pool, "m1", "Reuters", Some("B"), Some(2)).await;
-        insert_source(&pool, "s1", "case-1", Some("B"), Some(2), None).await;
-        insert_source(&pool, "s2", "case-1", Some("B"), Some(2), None).await;
+        insert_source(&pool, "s1", "case-1", Some("B"), Some(2), Some("supports")).await;
+        insert_source(&pool, "s2", "case-1", Some("B"), Some(2), Some("refutes")).await;
 
         sqlx::query("UPDATE sources SET reference_meta_source_id = 'm1' WHERE id IN ('s1','s2')")
             .execute(&pool)
@@ -311,8 +311,8 @@ mod tests {
 
         propagate_meta_rating(&pool, "m1").await.unwrap();
 
-        assert_eq!(rating(&pool, "s1").await, (Some("F".into()), Some(6), None));
-        assert_eq!(rating(&pool, "s2").await, (Some("F".into()), Some(6), None));
+        assert_eq!(rating(&pool, "s1").await, (Some("F".into()), Some(6), Some("supports".into())));
+        assert_eq!(rating(&pool, "s2").await, (Some("F".into()), Some(6), Some("refutes".into())));
     }
 
     #[tokio::test]
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_citing_source_never_keeps_a_stance() {
+    async fn a_citing_source_never_keeps_a_stance() {        // Source-referenced: the stance is suppressed by propagation.
         let pool = pool().await;
         insert_source(&pool, "core", "case-1", Some("A"), Some(1), Some("supports")).await;
         insert_source(&pool, "echo", "case-1", Some("A"), Some(1), Some("supports")).await;
@@ -353,6 +353,16 @@ mod tests {
             Some("supports".to_string()),
             "the core source keeps its own stance"
         );
+    }
+
+    #[test]
+    fn only_a_source_reference_locks_the_stance() {
+        // A sibling capture duplicates one piece of evidence, so it must not
+        // carry a stance. A meta source may publish several viewpoints, so its
+        // citations stay classifiable.
+        assert!(source_ref("s2").locks_stance());
+        assert!(!meta_ref("m1").locks_stance());
+        assert!(!ReferenceInput::default().locks_stance());
     }
 
     // --- schema guards ----------------------------------------------------

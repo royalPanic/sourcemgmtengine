@@ -91,15 +91,21 @@ function bucketOf(source: SourceWithAttachments): StanceBucket {
 }
 
 /**
- * True when a source cites another, which makes it a report *of* something
- * rather than independent evidence.
+ * True when a source duplicates another capture, which makes it a report *of*
+ * one piece of evidence rather than an independent one.
  *
- * Such sources are excluded from every dashboard statistic: ten outlets
- * repeating one core source would otherwise inflate both the source count and
- * the apparent weight of whatever stance those outlets lean toward.
+ * Only a reference to a **sibling source** counts. A meta source is a person or
+ * organisation that may express several viewpoints (a wire service publishing
+ * many articles), so its citations stay independent evidence and remain in the
+ * dashboard.
  */
 export function isReferenceLinked(source: SourceWithAttachments): boolean {
-  return Boolean(source.reference_source_id || source.reference_meta_source_id);
+  return Boolean(source.reference_source_id);
+}
+
+/** True when a source cites a meta source. */
+export function isMetaReferenced(source: SourceWithAttachments): boolean {
+  return Boolean(source.reference_meta_source_id);
 }
 
 function mean(values: number[]): number | null {
@@ -186,9 +192,11 @@ function summarizeCredibility(
 /**
  * Computes per-stance Admiralty averages for an event.
  *
- * Reference-linked sources are dropped entirely — see [`isReferenceLinked`].
- * Remaining sources with no stance fall into the `none` bucket so the totals
- * always reconcile with the source count that is actually being measured.
+ * Sources that cite a sibling source are dropped entirely — see
+ * [`isReferenceLinked`]. Sources citing a meta source are kept, since the
+ * entity may express several viewpoints. Remaining sources with no stance fall
+ * into the `none` bucket so the totals always reconcile with the source count
+ * that is actually being measured.
  */
 export function computeEventAnalytics(
   sources: SourceWithAttachments[],

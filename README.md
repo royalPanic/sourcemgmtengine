@@ -184,15 +184,17 @@ A **meta source** is a reusable entity — a news agency, an official, a spokesp
 
 A source may **reference** exactly one of:
 
-| Target | Meaning |
-| :--- | :--- |
-| Another source in the same container | "This capture reports on that capture" |
-| A meta source | "This capture reports on that person or organisation" |
+| Target | Rating | Stance | Analytics |
+| :--- | :--- | :--- | :--- |
+| Another source in the same container | Inherited | **Locked to none** | **Excluded** |
+| A meta source | Inherited | Editable | **Counted** |
+
+The two rows differ because they mean different things. Citing a sibling source duplicates one piece of evidence, so it must not add a second corroboration. Citing a meta source is a new capture of that entity's output — a wire service publishing many articles — so each capture is independent evidence and stays measurable.
 
 Two rules follow from the intent of the feature and are enforced in the backend, not just the UI:
 
 1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the reference — or a meta source — pushes the new rating down every citation, including citations of citations.
-2. **A citing source carries no stance.** Ten outlets repeating one core source must not read as ten independent corroborations, so the stance is forced to none and the control is disabled. Reference-linked sources are also excluded from every event dashboard statistic.
+2. **A source that cites another source carries no stance.** Ten outlets repeating one core capture must not read as ten independent corroborations, so the stance is forced to none, the control is disabled, and the source is excluded from every event dashboard statistic.
 
 Cycles (`A → B → A`) and cross-container references are rejected. The "at most one reference" rule is additionally enforced by SQLite triggers so it holds for any future writer.
 
