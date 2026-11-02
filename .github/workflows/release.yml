@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v1.0.0). Must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  # Fail fast on a bad tag before spending time on the platform builds.
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$TAG' is not a semver tag like v1.2.3"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check manifests agree with the tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          fail=0
+          check() {
+            local file="$1" actual="$2"
+            if [[ "$actual" != "$VERSION" ]]; then
+              echo "::error file=$file::version is '$actual' but the tag says '$VERSION'"
+              fail=1
+            fi
+          }
+          check package.json "$(node -p "require('./package.json').version")"
+          check src-tauri/tauri.conf.json "$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          check src-tauri/Cargo.toml "$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
+          exit $fail
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+          - os: ubuntu-latest
+            artifact: linux
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-${{ matrix.artifact }}
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build bundles
+        run: npm run tauri:build
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          find src-tauri/target/release/bundle -type f \
+            \( -name '*.msi' -o -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) \
+            -exec cp {} release-artifacts/ \;
+          ls -la release-artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: bundles-${{ matrix.artifact }}
+          path: release-artifacts/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: release-artifacts
+        run: |
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: ${{ needs.validate.outputs.tag }}
+          draft: true
+          generate_release_notes: true
+          files: release-artifacts/*
+          body: |
+            ## OSINT Case Manager ${{ needs.validate.outputs.tag }}
+
+            Local-first OSINT case and source manager. All data stays on your machine.
+
+            ### Downloads
+
+            | Platform | File | Notes |
+            | :--- | :--- | :--- |
+            | Windows | `*_x64-setup.exe` | Per-user install, no admin required |
+            | Windows | `*_x64_en-US.msi` | Per-machine install, requires admin |
+            | Linux | `*.AppImage` | Portable, `chmod +x` and run |
+            | Linux | `*.deb` | Debian/Ubuntu |
+
+            Verify downloads against `SHA256SUMS.txt`.
+
+            ### Installers are unsigned
+
+            These builds are not code-signed, so Windows SmartScreen and macOS Gatekeeper
+            will warn on first run. On Windows, choose **More info → Run anyway**.
+
+            ### Your data
+
+            Cases, notes, and attachments are stored outside the install directory and are
+            **not** removed when you uninstall:
+
+            - Windows: `%APPDATA%\com.osint.casemanager\`
+            - Linux: `~/.config/com.osint.casemanager/`

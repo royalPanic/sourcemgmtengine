@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OSINT Case Manager",
+  "version": "1.0.0",
+  "identifier": "com.osint.casemanager",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "OSINT Case Manager",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 700,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPCONFIG/attachments/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "royalPanic",
+    "shortDescription": "Local-first OSINT case and source manager",
+    "longDescription": "A local-first desktop application for managing intelligence cases, structured source evaluation, narrative case notes, and media evidence attachments. All data stays on your machine.",
+    "category": "Productivity",
+    "copyright": "Copyright © 2026 royalPanic",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:osint_case_manager.db"]
+    }
+  }
+}
