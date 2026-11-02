@@ -30,6 +30,8 @@ export const LOCATION_LABEL_KEY = 'location_label';
 
 const MIN_SPAN_DEGREES = 1.5;
 const DEFAULT_PADDING_RATIO = 0.18;
+/** Latitude at or beyond which longitude is treated as degenerate. */
+const POLE_LATITUDE = 89.5;
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -235,6 +237,69 @@ export function project(
   const y = ((bounds.maxLat - lat) / latSpan) * viewport.height;
 
   return { x, y };
+}
+
+/**
+ * Projects a land ring into a closed SVG path.
+ *
+ * Longitudes are unwrapped into a continuous sequence (each step is the
+ * shortest way round) so rings that cross the antimeridian or encircle a pole
+ * stay intact. The path is then shifted by whole turns to overlap the window,
+ * and the caller clips it with an SVG `clipPath`. Clipping in the renderer
+ * rather than here keeps the geometry exact for every projection.
+ */
+export function ringToPath(
+  ring: readonly number[],
+  bounds: GeoBounds,
+  viewport: Viewport
+): string {
+  const count = ring.length / 2;
+  if (count < 3) return '';
+
+  // Unwrap: pick the representative of each longitude closest to the previous.
+  // Longitude is degenerate at a pole, so the constraint is skipped across
+  // pole vertices; otherwise a circumpolar ring such as Antarctica gets
+  // dragged a full turn around and its span exceeds 360 degrees.
+  const lons: number[] = [];
+  const lats: number[] = [];
+  let previous = ring[0];
+  let previousAtPole = Math.abs(ring[1]) >= POLE_LATITUDE;
+
+  for (let i = 0; i < ring.length; i += 2) {
+    const lat = ring[i + 1];
+    const atPole = Math.abs(lat) >= POLE_LATITUDE;
+    let lon = ring[i];
+
+    if (i > 0 && !atPole && !previousAtPole) {
+      while (lon - previous > 180) lon -= 360;
+      while (lon - previous < -180) lon += 360;
+    }
+
+    lons.push(lon);
+    lats.push(lat);
+    previous = lon;
+    previousAtPole = atPole;
+  }
+
+  // Shift the whole ring by whole turns so it overlaps the window.
+  const ringMin = Math.min(...lons);
+  const ringMax = Math.max(...lons);
+  const ringCenter = (ringMin + ringMax) / 2;
+  const windowCenter = (bounds.minLon + bounds.maxLon) / 2;
+  const shift = Math.round((windowCenter - ringCenter) / 360) * 360;
+
+  const lonSpan = bounds.maxLon - bounds.minLon || 1;
+  const latSpan = bounds.maxLat - bounds.minLat || 1;
+
+  const commands: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = ((lons[i] + shift - bounds.minLon) / lonSpan) * viewport.width;
+    const y = ((bounds.maxLat - lats[i]) / latSpan) * viewport.height;
+    commands.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
+  }
+  commands.push('Z');
+
+  return commands.join(' ');
 }
 
 /** Chooses a "nice" graticule step for the current zoom level. */

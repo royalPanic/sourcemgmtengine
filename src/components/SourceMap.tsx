@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { SourceWithAttachments } from '../types';
 import {
   collectGeoPoints,
@@ -7,9 +7,11 @@ import {
   buildGraticule,
   formatCoordinate,
   clusterProjected,
+  ringToPath,
   type GeoPoint,
   type PinCluster,
 } from '../utils/geo';
+import { WORLD_RINGS } from '../utils/worldOutline';
 
 interface SourceMapProps {
   sources: SourceWithAttachments[];
@@ -33,6 +35,8 @@ export function SourceMap({ sources }: SourceMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [hovered, setHovered] = useState<string | null>(null);
+  // Scopes the clip path so multiple maps on one page do not collide.
+  const clipId = `map-viewport-${useId().replace(/:/g, '')}`;
 
   const points = useMemo(() => collectGeoPoints(sources), [sources]);
 
@@ -75,6 +79,17 @@ export function SourceMap({ sources }: SourceMapProps) {
   // Pins that land on top of each other collapse into one marker with a count.
   const clusters = useMemo(() => clusterProjected(projected), [projected]);
 
+  // Land outlines give the pins geographic context. Rings are pre-split at the
+  // antimeridian, so each one is a single continuous path.
+  const landPaths = useMemo(
+    () =>
+      WORLD_RINGS.map(ring => ringToPath(ring, bounds, viewport)).filter(
+        path => path !== ''
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bounds, viewport.width, viewport.height]
+  );
+
   if (points.length === 0) {
     return (
       <div className="text-center py-10 text-zinc-500">
@@ -105,6 +120,25 @@ export function SourceMap({ sources }: SourceMapProps) {
             role="img"
             aria-label={`Map of ${points.length} geolocated sources`}
           >
+            {/* Land outlines, clipped to the viewport */}
+            <defs>
+              <clipPath id={clipId}>
+                <rect x={0} y={0} width={viewport.width} height={viewport.height} />
+              </clipPath>
+            </defs>
+            <g
+              clipPath={`url(#${clipId})`}
+              fill="#1f1f23"
+              stroke="#52525b"
+              strokeWidth={0.75}
+              strokeLinejoin="round"
+              fillRule="evenodd"
+            >
+              {landPaths.map((path, index) => (
+                <path key={index} d={path} />
+              ))}
+            </g>
+
             {/* Graticule */}
             <g stroke="#27272a" strokeWidth={1}>
               {graticule.lats.map(lat => {

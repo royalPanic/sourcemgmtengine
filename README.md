@@ -48,6 +48,11 @@ sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
   librsvg2-dev patchelf libgtk-3-dev
 ```
 
+> **macOS is not officially supported.** No macOS bundles are built or released. The codebase is not
+> macOS-hostile, so you can build it yourself with `npm run tauri:build` if you have the
+> [Tauri prerequisites](https://tauri.app/start/prerequisites/) installed — but it is untested and
+> unsupported.
+
 ---
 
 ## Getting started
@@ -108,7 +113,6 @@ The database is created on first launch at:
 | Platform | Path |
 | :--- | :--- |
 | Windows | `%APPDATA%\com.osint.casemanager\osint_case_manager.db` |
-| macOS | `~/Library/Application Support/com.osint.casemanager/` |
 | Linux | `~/.config/com.osint.casemanager/` |
 
 Attachments are written to `attachments/<source_id>/` inside the same directory. Only the **relative** path is stored in the database, so the folder can be moved between machines.

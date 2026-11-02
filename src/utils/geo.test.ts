@@ -11,8 +11,10 @@ import {
   buildGraticule,
   formatCoordinate,
   clusterProjected,
+  ringToPath,
   type GeoPoint,
 } from './geo';
+import { WORLD_RINGS } from './worldOutline';
 import type { SourceWithAttachments } from '../types';
 
 const VIEWPORT = { width: 800, height: 400 }; // aspect 2:1
@@ -288,5 +290,140 @@ describe('clusterProjected', () => {
 
   it('handles an empty input', () => {
     expect(clusterProjected([])).toEqual([]);
+  });
+});
+
+describe('ringToPath', () => {
+  const WORLD = { minLat: -90, maxLat: 90, minLon: -180, maxLon: 180 };
+
+  function parsePath(d: string): Array<[number, number]> {
+    const pts: Array<[number, number]> = [];
+    for (const m of d.matchAll(/[ML]([-\d.]+) ([-\d.]+)/g)) pts.push([+m[1], +m[2]]);
+    return pts;
+  }
+
+  function inside(x: number, y: number, poly: Array<[number, number]>): boolean {
+    let hit = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i];
+      const [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y)) {
+        const xInt = ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+        if (x < xInt) hit = !hit;
+      }
+    }
+    return hit;
+  }
+
+  /** True when the projected land covers the given coordinate. */
+  function landAt(
+    lat: number,
+    lon: number,
+    bounds: typeof WORLD,
+    viewport: { width: number; height: number }
+  ): boolean {
+    const { x, y } = project(lat, lon, bounds, viewport);
+    return WORLD_RINGS.map(r => ringToPath(r, bounds, viewport))
+      .filter(d => d !== '')
+      .some(d => inside(x, y, parsePath(d)));
+  }
+
+  it('emits a closed path for every ring', () => {
+    for (const ring of WORLD_RINGS) {
+      const d = ringToPath(ring, WORLD, VIEWPORT);
+      expect(d).not.toBe('');
+      expect(d.trimEnd().endsWith('Z')).toBe(true);
+    }
+  });
+
+  it('covers land and excludes ocean on a world view', () => {
+    const probes: Array<[string, number, number, boolean]> = [
+      ['London', 51.5, -0.13, true],
+      ['Sahara', 23, 10, true],
+      ['Amazon', -5, -60, true],
+      ['Australia', -25, 134, true],
+      ['Siberia', 65, 100, true],
+      ['Greenland', 72, -42, true],
+      ['Antarctica', -85, 0, true],
+      ['Mid-Atlantic', 30, -30, false],
+      ['Pacific', 0, -140, false],
+      ['Indian Ocean', -20, 80, false],
+      ['Arctic Ocean', 88, 0, false],
+      ['Southern Ocean', -60, 0, false],
+    ];
+
+    for (const [name, lat, lon, expected] of probes) {
+      expect(landAt(lat, lon, WORLD, VIEWPORT), name).toBe(expected);
+    }
+  });
+
+  it('keeps coastal cities on land when cropped to a region', () => {
+    const regions: Array<[string, Array<[number, number]>, Array<[string, number, number, boolean]>]> = [
+      ['W Europe', [[51.5, -0.13], [48.85, 2.35], [40.4, -3.7]], [
+        ['London', 51.5, -0.13, true],
+        ['Paris', 48.85, 2.35, true],
+        ['Madrid', 40.4, -3.7, true],
+        ['Bay of Biscay', 45, -6, false],
+        ['English Channel', 50.2, -0.5, false],
+      ]],
+      ['E Asia', [[35.68, 139.65], [37.57, 126.98], [31.23, 121.47]], [
+        ['Tokyo', 35.68, 139.65, true],
+        ['Seoul', 37.57, 126.98, true],
+        ['Shanghai', 31.23, 121.47, true],
+        ['Sea of Japan', 39, 134, false],
+        ['Yellow Sea', 35, 123, false],
+      ]],
+      ['US East', [[40.71, -74], [38.9, -77.04], [42.36, -71.06]], [
+        ['New York', 40.71, -74, true],
+        ['Washington', 38.9, -77.04, true],
+        ['Boston', 42.36, -71.06, true],
+        ['Atlantic', 39.5, -71, false],
+      ]],
+      ['Australia', [[-33.87, 151.21], [-37.81, 144.96], [-27.47, 153.03]], [
+        ['Sydney', -33.87, 151.21, true],
+        ['Melbourne', -37.81, 144.96, true],
+        ['Brisbane', -27.47, 153.03, true],
+        ['Tasman Sea', -35, 156, false],
+      ]],
+    ];
+
+    for (const [region, pins, probes] of regions) {
+      const bounds = computeBounds(
+        pins.map(([lat, lon], i) => point(lat, lon, `p${i}`)),
+        VIEWPORT
+      );
+
+      for (const [name, lat, lon, expected] of probes) {
+        const inWindow =
+          lat >= bounds.minLat &&
+          lat <= bounds.maxLat &&
+          lon >= bounds.minLon &&
+          lon <= bounds.maxLon;
+        if (!inWindow) continue;
+
+        expect(landAt(lat, lon, bounds, VIEWPORT), `${region}/${name}`).toBe(expected);
+      }
+    }
+  });
+
+  it('handles a ring that encircles a pole', () => {
+    // Antarctica wraps the south pole; unwrapping must not drag it a full turn.
+    const antarctic = WORLD_RINGS.filter(ring => {
+      const lats = ring.filter((_, i) => i % 2 === 1);
+      return Math.min(...lats) <= -89;
+    });
+    expect(antarctic.length).toBeGreaterThan(0);
+
+    for (const ring of antarctic) {
+      const d = ringToPath(ring, WORLD, VIEWPORT);
+      const xs = parsePath(d).map(p => p[0]);
+      // A full turn of drift would push the path far outside the viewport.
+      expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(VIEWPORT.width * 1.5);
+    }
+  });
+
+  it('returns an empty path for degenerate rings', () => {
+    expect(ringToPath([], WORLD, VIEWPORT)).toBe('');
+    expect(ringToPath([0, 0, 1, 1], WORLD, VIEWPORT)).toBe('');
   });
 });
