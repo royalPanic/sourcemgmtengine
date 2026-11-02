@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { CaseNotesEditor } from './CaseNotesEditor';
 import { SourcesGrid } from './SourcesGrid';
 import { EventHeader } from './EventHeader';
+import { Dashboard } from './Dashboard';
 import { useCaseNote } from '../hooks/useCases';
 import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+
+type Tab = 'notes' | 'sources' | 'dashboard';
 
 interface MainContentProps {
   container: Case | null;
@@ -55,7 +58,7 @@ export function MainContent({
   onOpenAttachment,
   onOpenSourceDetail,
 }: MainContentProps) {
-  const [activeTab, setActiveTab] = useState<'notes' | 'sources'>('notes');
+  const [activeTab, setActiveTab] = useState<Tab>('notes');
   const caseId = container?.id ?? null;
   const { note, loading: noteLoading, saving, saveNote } = useCaseNote(caseId);
 
@@ -117,6 +120,23 @@ export function MainContent({
               Sources ({sources.length})
             </span>
           </button>
+          {isEvent && (
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'dashboard'
+                  ? 'bg-amber-600/20 text-amber-300 border border-amber-500/50'
+                  : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Dashboard
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -143,6 +163,9 @@ export function MainContent({
             onOpenAttachment={onOpenAttachment}
             onOpenDetail={onOpenSourceDetail}
           />
+        )}
+        {activeTab === 'dashboard' && isEvent && (
+          <Dashboard sources={sources} loading={sourcesLoading} />
         )}
       </div>
     </div>
