@@ -104,8 +104,8 @@ Releases are built by GitHub Actions and published as draft releases.
 2. Commit, then tag and push:
 
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v2.0.1
+   git push origin v2.0.1
    ```
 
 3. The [release workflow](.github/workflows/release.yml) validates the tag against the manifests, builds
