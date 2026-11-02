@@ -1,69 +1,80 @@
-name: Build Release
+name: Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
   workflow_dispatch: {}
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  tauri:
+    name: Tauri build (${{ matrix.os }})
+    needs: frontend
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.x'
+          node-version: '20'
+          cache: npm
 
-      - name: Install build dependencies
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
 
-      - name: Fetch FFmpeg builds
-        run: python scripts/fetch_ffmpeg.py
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build executable (PyInstaller)
-        run: python scripts/build_exe.py --name source-management-engine-${{ matrix.os }}
+      - name: Build Tauri app
+        run: npm run tauri:build
 
-      - name: Upload build artifact
+      - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
-          name: source-management-engine-${{ matrix.os }}
-          path: dist
-
-      - name: Package dist for release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          python -c "import shutil; shutil.make_archive('release-{}'.format('${{ matrix.os }}'), 'zip', 'dist'); print('Created archive: release-{}.zip'.format('${{ matrix.os }}'))"
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: ${{ github.ref_name }}
-          body: 'Automated release from CI'
-          draft: false
-          prerelease: false
-
-      - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: release-${{ matrix.os }}.zip
-          asset_name: source-management-engine-${{ matrix.os }}.zip
-          asset_content_type: application/zip
+          name: osint-case-manager-${{ matrix.os }}
+          path: src-tauri/target/release/bundle
+          if-no-files-found: warn

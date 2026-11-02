@@ -1,0 +1,38 @@
+mod commands;
+mod database;
+mod models;
+
+use commands::{cases, files, sources};
+use database::connection::init_sql_plugin;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(init_sql_plugin())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            cases::create_case,
+            cases::get_cases,
+            cases::get_case,
+            cases::update_case,
+            cases::delete_case,
+            cases::get_case_note,
+            cases::update_case_note,
+            sources::create_source,
+            sources::get_sources,
+            sources::get_source,
+            sources::update_source,
+            sources::delete_source,
+            sources::add_source_attachment,
+            sources::delete_source_attachment,
+            files::save_attachment,
+            files::read_attachment,
+            files::delete_attachment_file,
+            files::open_attachment,
+            files::get_attachment_path,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

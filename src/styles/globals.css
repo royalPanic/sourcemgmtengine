@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 3 7% 9%;
+    --foreground: 210 40% 98%;
+  }
+
+  .dark {
+    --background: 3 7% 9%;
+    --foreground: 210 40% 98%;
+  }
+
+  * {
+    @apply border-zinc-800;
+  }
+
+  body {
+    @apply bg-zinc-950 text-zinc-100;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-zinc-950;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-zinc-600;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-amber-600 text-zinc-950 hover:bg-amber-500 active:bg-amber-700;
+  }
+
+  .btn-secondary {
+    @apply btn bg-zinc-800 text-zinc-100 hover:bg-zinc-700 active:bg-zinc-600;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-zinc-800 active:bg-zinc-700;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600/20 text-red-400 hover:bg-red-600/30 active:bg-red-600/40;
+  }
+
+  .input {
+    @apply flex h-10 w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .textarea {
+    @apply flex min-h-[100px] w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .select {
+    @apply flex h-10 w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .card {
+    @apply rounded-xl border border-zinc-800 bg-zinc-900/50 shadow-sm;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-reliability-a { @apply badge bg-emerald-500/20 text-emerald-400; }
+  .badge-reliability-b { @apply badge bg-emerald-500/20 text-emerald-400; }
+  .badge-reliability-c { @apply badge bg-amber-500/20 text-amber-400; }
+  .badge-reliability-d { @apply badge bg-orange-500/20 text-orange-400; }
+  .badge-reliability-e { @apply badge bg-red-500/20 text-red-400; }
+  .badge-reliability-f { @apply badge bg-zinc-500/20 text-zinc-400; }
+
+  .badge-credibility-1 { @apply badge bg-emerald-500/20 text-emerald-400; }
+  .badge-credibility-2 { @apply badge bg-emerald-500/20 text-emerald-400; }
+  .badge-credibility-3 { @apply badge bg-amber-500/20 text-amber-400; }
+  .badge-credibility-4 { @apply badge bg-orange-500/20 text-orange-400; }
+  .badge-credibility-5 { @apply badge bg-red-500/20 text-red-400; }
+  .badge-credibility-6 { @apply badge bg-zinc-500/20 text-zinc-400; }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* TipTap editor surface */
+.prose-editor {
+  @apply text-sm leading-relaxed;
+}
+
+.prose-editor > * + * {
+  @apply mt-3;
+}
+
+.prose-editor h1 { @apply text-2xl font-semibold text-zinc-100 mt-6; }
+.prose-editor h2 { @apply text-xl font-semibold text-zinc-100 mt-5; }
+.prose-editor h3 { @apply text-lg font-semibold text-zinc-100 mt-4; }
+.prose-editor ul { @apply list-disc pl-6; }
+.prose-editor ol { @apply list-decimal pl-6; }
+.prose-editor blockquote { @apply border-l-2 border-amber-600/60 pl-4 text-zinc-400 italic; }
+.prose-editor code { @apply rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs text-amber-300; }
+.prose-editor pre { @apply rounded-lg bg-zinc-900 p-4 overflow-x-auto; }
+.prose-editor pre code { @apply bg-transparent p-0 text-zinc-200; }
+.prose-editor a { @apply text-amber-400 underline; }
+.prose-editor mark { @apply bg-amber-500/30 text-zinc-100; }
+.prose-editor table { @apply w-full border-collapse text-sm; }
+.prose-editor th,
+.prose-editor td { @apply border border-zinc-700 px-3 py-2 text-left; }
+.prose-editor th { @apply bg-zinc-800/60 font-medium; }
+.prose-editor ul[data-type="taskList"] { @apply list-none pl-0; }
+.prose-editor ul[data-type="taskList"] li { @apply flex items-start gap-2; }
+.prose-editor p.is-editor-empty:first-child::before {
+  @apply text-zinc-600 float-left h-0 pointer-events-none;
+  content: attr(data-placeholder);
+}
