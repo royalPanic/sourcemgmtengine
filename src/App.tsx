@@ -2,16 +2,17 @@ import { useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { MainContent } from './components/MainContent';
 import { DetailDrawer } from './components/DetailDrawer';
+import { NewContainerModal } from './components/NewContainerModal';
 import { useCases } from './hooks/useCases';
 import { useSources } from './hooks/useSources';
-import type { SourceWithAttachments } from './types';
+import type { SourceWithAttachments, ContainerKind } from './types';
 
 function App() {
-  const { cases, loading, createCase, deleteCase } = useCases();
+  const { cases, loading, createCase, updateCase, deleteCase } = useCases();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSource, setDrawerSource] = useState<SourceWithAttachments | null>(null);
-  const [showNewCaseModal, setShowNewCaseModal] = useState(false);
+  const [newContainerKind, setNewContainerKind] = useState<ContainerKind | null>(null);
 
   const {
     sources,
@@ -19,10 +20,13 @@ function App() {
     createSource,
     updateSource,
     deleteSource,
-    addAttachment,
+    importAttachment,
     deleteAttachment,
     openAttachment,
+    getAttachmentUrl,
   } = useSources(selectedCaseId);
+
+  const selectedCase = cases.find(c => c.id === selectedCaseId) ?? null;
 
   const handleSelectCase = (caseId: string) => {
     setSelectedCaseId(caseId);
@@ -35,14 +39,20 @@ function App() {
     setDrawerOpen(true);
   };
 
-  const handleCreateCase = async (title: string, description?: string) => {
-    const newCase = await createCase(title, description);
-    setSelectedCaseId(newCase.id);
-    setShowNewCaseModal(false);
+  const handleCreateContainer = async (params: {
+    title: string;
+    description?: string;
+    kind: ContainerKind;
+    eventDate?: string;
+    eventTime?: string;
+  }) => {
+    const created = await createCase(params);
+    setSelectedCaseId(created.id);
+    setNewContainerKind(null);
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    if (window.confirm('Are you sure you want to delete this case? This will also delete all associated sources and notes.')) {
+    if (window.confirm('Are you sure you want to delete this container? This will also delete all associated sources and notes.')) {
       await deleteCase(caseId);
       if (selectedCaseId === caseId) {
         setSelectedCaseId(null);
@@ -62,18 +72,20 @@ function App() {
         loading={loading}
         selectedCaseId={selectedCaseId}
         onSelectCase={handleSelectCase}
-        onCreateCase={() => setShowNewCaseModal(true)}
+        onCreateCase={() => setNewContainerKind('case')}
+        onCreateEvent={() => setNewContainerKind('event')}
         onDeleteCase={handleDeleteCase}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <MainContent
-          caseId={selectedCaseId}
+          container={selectedCase}
           sources={sources}
           sourcesLoading={sourcesLoading}
+          onUpdateContainer={updateCase}
           onCreateSource={createSource}
           onUpdateSource={updateSource}
           onDeleteSource={deleteSource}
-          onAddAttachment={addAttachment}
+          onImportAttachment={importAttachment}
           onDeleteAttachment={deleteAttachment}
           onOpenAttachment={openAttachment}
           onOpenSourceDetail={handleOpenSourceDetail}
@@ -83,74 +95,20 @@ function App() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         source={activeDrawerSource}
+        isEvent={selectedCase?.kind === 'event'}
         onUpdate={updateSource}
-        onAddAttachment={addAttachment}
+        onImportAttachment={importAttachment}
         onDeleteAttachment={deleteAttachment}
         onOpenAttachment={openAttachment}
+        resolveAttachmentUrl={getAttachmentUrl}
       />
-      {showNewCaseModal && (
-        <NewCaseModal
-          onClose={() => setShowNewCaseModal(false)}
-          onSubmit={handleCreateCase}
+      {newContainerKind && (
+        <NewContainerModal
+          kind={newContainerKind}
+          onClose={() => setNewContainerKind(null)}
+          onSubmit={handleCreateContainer}
         />
       )}
-    </div>
-  );
-}
-
-function NewCaseModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (title: string, description?: string) => Promise<void> }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      await onSubmit(title.trim(), description.trim() || undefined);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md mx-4 card p-6">
-        <h2 className="text-xl font-semibold mb-4">Create New Case</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input"
-              placeholder="Enter case title"
-              autoFocus
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="textarea min-h-[80px]"
-              placeholder="Optional description"
-              rows={3}
-            />
-          </div>
-          <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !title.trim()}>
-              {submitting ? 'Creating...' : 'Create Case'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }

@@ -1,7 +1,17 @@
+export type ContainerKind = 'case' | 'event';
+
+/** How a source bears on the event it belongs to. `null` = none / not applicable. */
+export type Stance = 'supports' | 'refutes' | 'neutral';
+
 export interface Case {
   id: string;
   title: string;
   description: string | null;
+  kind: ContainerKind;
+  /** Calendar date, `YYYY-MM-DD`. Only set for events. */
+  event_date: string | null;
+  /** Wall-clock time, `HH:MM`. Optional even for events. */
+  event_time: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +42,7 @@ export interface Source {
   raw_text: string | null;
   reliability_code: ReliabilityCode | null;
   credibility_code: CredibilityCode | null;
+  stance: Stance | null;
   custom_metadata: string; // JSON string
   created_at: string;
   updated_at: string;
@@ -45,6 +56,35 @@ export interface SourceAttachment {
   mime_type: string | null;
   file_size: number | null;
   created_at: string;
+}
+
+/** Result of copying a file from disk into the app's attachment store. */
+export interface ImportedAttachment {
+  file_name: string;
+  relative_path: string;
+  mime_type: string;
+  file_size: number;
+}
+
+export type MediaKind = 'image' | 'video' | 'audio' | 'other';
+
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tif', 'tiff'];
+export const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv'];
+export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'flac'];
+export const MEDIA_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS];
+
+/** Classifies an attachment by MIME type, falling back to the file extension. */
+export function mediaKind(attachment: SourceAttachment): MediaKind {
+  const mime = attachment.mime_type?.toLowerCase() ?? '';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+
+  const ext = attachment.file_name.split('.').pop()?.toLowerCase() ?? '';
+  if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+  if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+  if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
+  return 'other';
 }
 
 export interface SourceWithAttachments extends Source {
@@ -80,3 +120,23 @@ export const SOURCE_TYPES: SourceType[] = ['URL', 'Document', 'Social Media', 'I
 
 export const RELIABILITY_CODES: ReliabilityCode[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 export const CREDIBILITY_CODES: CredibilityCode[] = [1, 2, 3, 4, 5, 6];
+
+export const STANCES: Stance[] = ['supports', 'refutes', 'neutral'];
+
+export const STANCE_DEFINITIONS: Record<Stance, { label: string; description: string }> = {
+  supports: {
+    label: 'Supports',
+    description: 'This source corroborates that the event occurred as described.',
+  },
+  refutes: {
+    label: 'Refutes',
+    description: 'This source contradicts or undermines the event as described.',
+  },
+  neutral: {
+    label: 'Neutral',
+    description: 'This source mentions the event without corroborating or contradicting it.',
+  },
+};
+
+/** Label for the "no stance" option, used on events and forced on plain cases. */
+export const STANCE_NONE_LABEL = 'None / N/A';

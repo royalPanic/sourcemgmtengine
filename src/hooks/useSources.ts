@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sourcesApi, filesApi } from '../api/tauri';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
 
 export function useSources(caseId: string | null) {
   const [sources, setSources] = useState<SourceWithAttachments[]>([]);
@@ -35,6 +35,7 @@ export function useSources(caseId: string | null) {
     rawText?: string;
     reliabilityCode?: string;
     credibilityCode?: number;
+    stance?: Stance;
     customMetadata?: SourceCustomMetadata;
   }) => {
     if (!caseId) throw new Error('No case selected');
@@ -51,6 +52,7 @@ export function useSources(caseId: string | null) {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
+    stance: Stance;
     customMetadata: SourceCustomMetadata;
   }>) => {
     const updated = await sourcesApi.update(id, params);
@@ -67,7 +69,7 @@ export function useSources(caseId: string | null) {
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
     const relativePath = await filesApi.saveAttachment(sourceId, file.name, data);
-    
+
     const attachment = await sourcesApi.addAttachment({
       sourceId,
       fileName: file.name,
@@ -75,13 +77,37 @@ export function useSources(caseId: string | null) {
       mimeType: file.type,
       fileSize: file.size,
     });
-    
+
     setSources(prev => prev.map(s =>
       s.id === sourceId
         ? { ...s, attachments: [...s.attachments, attachment] }
         : s
     ));
-    
+
+    return attachment;
+  };
+
+  /**
+   * Imports a file the user picked from disk. The copy happens in Rust so the
+   * bytes never travel through the webview.
+   */
+  const importAttachment = async (sourceId: string, sourcePath: string) => {
+    const imported = await filesApi.importAttachment(sourceId, sourcePath);
+
+    const attachment = await sourcesApi.addAttachment({
+      sourceId,
+      fileName: imported.file_name,
+      relativePath: imported.relative_path,
+      mimeType: imported.mime_type,
+      fileSize: imported.file_size,
+    });
+
+    setSources(prev => prev.map(s =>
+      s.id === sourceId
+        ? { ...s, attachments: [...s.attachments, attachment] }
+        : s
+    ));
+
     return attachment;
   };
 
@@ -99,6 +125,8 @@ export function useSources(caseId: string | null) {
     await filesApi.openAttachment(relativePath);
   };
 
+  const getAttachmentUrl = (relativePath: string) => filesApi.assetUrl(relativePath);
+
   return {
     sources,
     loading,
@@ -108,7 +136,9 @@ export function useSources(caseId: string | null) {
     updateSource,
     deleteSource,
     addAttachment,
+    importAttachment,
     deleteAttachment,
     openAttachment,
+    getAttachmentUrl,
   };
 }

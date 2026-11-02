@@ -3,13 +3,22 @@ use tauri_plugin_opener::OpenerExt;
 use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 
-/// Resolves a stored relative path against the app data directory, rejecting
+/// Upper bound for a single attachment. Media files are read fully into memory
+/// before being written, so this keeps a stray multi-gigabyte pick from
+/// exhausting the process.
+const MAX_ATTACHMENT_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Resolves a stored relative path against the app config directory, rejecting
 /// any path that escapes it (absolute paths, `..`, drive prefixes, etc.).
+///
+/// The SQL plugin stores its database in `app_config_dir`, so attachments live
+/// alongside it and the asset-protocol scope (`$APPCONFIG/attachments/**`)
+/// covers exactly this tree.
 fn resolve_attachment_path(app: &AppHandle, relative_path: &str) -> Result<PathBuf, String> {
-    let app_data_dir = app
+    let app_config_dir = app
         .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
 
     let candidate = Path::new(relative_path);
 
@@ -17,7 +26,7 @@ fn resolve_attachment_path(app: &AppHandle, relative_path: &str) -> Result<PathB
         return Err("Attachment path must be relative".to_string());
     }
 
-    let mut resolved = app_data_dir.clone();
+    let mut resolved = app_config_dir.clone();
     for component in candidate.components() {
         match component {
             Component::Normal(part) => resolved.push(part),
@@ -26,15 +35,15 @@ fn resolve_attachment_path(app: &AppHandle, relative_path: &str) -> Result<PathB
         }
     }
 
-    // Defence in depth: the canonical parent must stay inside the app data dir.
+    // Defence in depth: the canonical parent must stay inside the app config dir.
     let parent = resolved
         .parent()
         .ok_or_else(|| "Attachment path has no parent directory".to_string())?;
     if let (Ok(canonical_parent), Ok(canonical_root)) =
-        (parent.canonicalize(), app_data_dir.canonicalize())
+        (parent.canonicalize(), app_config_dir.canonicalize())
     {
         if !canonical_parent.starts_with(&canonical_root) {
-            return Err("Attachment path escapes the app data directory".to_string());
+            return Err("Attachment path escapes the app config directory".to_string());
         }
     }
 
@@ -60,32 +69,66 @@ fn sanitize_file_name(file_name: &str) -> String {
     }
 }
 
-#[command]
-pub async fn save_attachment(
-    app: AppHandle,
-    source_id: String,
-    file_name: String,
-    data: Vec<u8>,
+/// Maps a file extension to a MIME type. Used when the caller cannot supply one
+/// (for example when importing a file straight from disk).
+fn mime_from_extension(extension: &str) -> &'static str {
+    match extension.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        "tif" | "tiff" => "image/tiff",
+        "mp4" => "video/mp4",
+        "m4v" => "video/x-m4v",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "avi" => "video/x-msvideo",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "flac" => "audio/flac",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "json" => "application/json",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Writes `data` into `attachments/<source_id>/` and returns the relative path.
+fn write_attachment(
+    app: &AppHandle,
+    source_id: &str,
+    file_name: &str,
+    data: &[u8],
 ) -> Result<String, String> {
-    let app_data_dir = app
+    let app_config_dir = app
         .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
 
-    let safe_source_id = sanitize_file_name(&source_id);
-    let safe_file_name = sanitize_file_name(&file_name);
+    let safe_source_id = sanitize_file_name(source_id);
+    let safe_file_name = sanitize_file_name(file_name);
 
-    let attachments_dir = app_data_dir.join("attachments").join(&safe_source_id);
+    let attachments_dir = app_config_dir.join("attachments").join(&safe_source_id);
     std::fs::create_dir_all(&attachments_dir)
         .map_err(|e| format!("Failed to create attachments dir: {}", e))?;
 
-    let extension = PathBuf::from(&safe_file_name)
+    let path = PathBuf::from(&safe_file_name);
+    let extension = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_string();
-
-    let stem = PathBuf::from(&safe_file_name)
+    let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("file")
@@ -100,10 +143,86 @@ pub async fn save_attachment(
     let file_path = attachments_dir.join(&unique_name);
     let relative_path = format!("attachments/{}/{}", safe_source_id, unique_name);
 
-    std::fs::write(&file_path, &data)
+    std::fs::write(&file_path, data)
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(relative_path)
+}
+
+#[command]
+pub async fn save_attachment(
+    app: AppHandle,
+    source_id: String,
+    file_name: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    if data.len() as u64 > MAX_ATTACHMENT_BYTES {
+        return Err(format!(
+            "Attachment exceeds the {} MB limit",
+            MAX_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+
+    write_attachment(&app, &source_id, &file_name, &data)
+}
+
+/// Copies a file the user picked on disk into the app's attachment store.
+///
+/// The frontend uses the dialog plugin to obtain an absolute path, then hands it
+/// here. Reading happens in Rust so the file never has to be marshalled through
+/// the webview as a byte array.
+#[command]
+pub async fn import_attachment(
+    app: AppHandle,
+    source_id: String,
+    source_path: String,
+) -> Result<ImportedAttachment, String> {
+    let path = PathBuf::from(&source_path);
+
+    if !path.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+
+    let metadata = std::fs::metadata(&path)
+        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+
+    if metadata.len() > MAX_ATTACHMENT_BYTES {
+        return Err(format!(
+            "Attachment exceeds the {} MB limit",
+            MAX_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.to_string())
+        .ok_or_else(|| "Selected file has no valid name".to_string())?;
+
+    let data = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let relative_path = write_attachment(&app, &source_id, &file_name, &data)?;
+
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    Ok(ImportedAttachment {
+        file_name,
+        relative_path,
+        mime_type: mime_from_extension(extension).to_string(),
+        file_size: metadata.len() as i64,
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct ImportedAttachment {
+    pub file_name: String,
+    pub relative_path: String,
+    pub mime_type: String,
+    pub file_size: i64,
 }
 
 #[command]

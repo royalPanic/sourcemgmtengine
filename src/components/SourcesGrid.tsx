@@ -1,10 +1,20 @@
 import { useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata } from '../types';
-import { SOURCE_TYPES, RELIABILITY_CODES, CREDIBILITY_CODES, RELIABILITY_DEFINITIONS, CREDIBILITY_DEFINITIONS } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import {
+  SOURCE_TYPES,
+  RELIABILITY_CODES,
+  CREDIBILITY_CODES,
+  RELIABILITY_DEFINITIONS,
+  CREDIBILITY_DEFINITIONS,
+  STANCES,
+  STANCE_DEFINITIONS,
+  STANCE_NONE_LABEL,
+} from '../types';
 
 interface SourcesGridProps {
   sources: SourceWithAttachments[];
   loading: boolean;
+  isEvent: boolean;
   onCreateSource: (params: {
     title: string;
     sourceType: SourceType;
@@ -12,6 +22,7 @@ interface SourcesGridProps {
     rawText?: string;
     reliabilityCode?: string;
     credibilityCode?: number;
+    stance?: Stance;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
   onUpdateSource: (id: string, params: Partial<{
@@ -21,10 +32,11 @@ interface SourcesGridProps {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
+    stance: Stance;
     customMetadata: SourceCustomMetadata;
   }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;
-  onAddAttachment: (sourceId: string, file: File) => Promise<unknown>;
+  onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenDetail: (source: SourceWithAttachments) => void;
@@ -33,6 +45,7 @@ interface SourcesGridProps {
 export function SourcesGrid({
   sources,
   loading,
+  isEvent,
   onCreateSource,
   onDeleteSource,
   onOpenDetail,
@@ -80,6 +93,7 @@ export function SourcesGrid({
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">Admiralty</th>
+                {isEvent && <th className="px-4 py-2 font-medium">Stance</th>}
                 <th className="px-4 py-2 font-medium">Attachments</th>
                 <th className="px-4 py-2 font-medium">Updated</th>
                 <th className="px-4 py-2" />
@@ -123,6 +137,11 @@ export function SourcesGrid({
                       )}
                     </div>
                   </td>
+                  {isEvent && (
+                    <td className="px-4 py-3">
+                      <StanceBadge stance={source.stance} />
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-zinc-400">{source.attachments.length}</td>
                   <td className="px-4 py-3 text-zinc-500 text-xs">{formatDate(source.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
@@ -151,6 +170,7 @@ export function SourcesGrid({
 
       {showNewSource && (
         <NewSourceModal
+          isEvent={isEvent}
           onClose={() => setShowNewSource(false)}
           onSubmit={async (params) => {
             await onCreateSource(params);
@@ -162,10 +182,30 @@ export function SourcesGrid({
   );
 }
 
+export function StanceBadge({ stance }: { stance: Stance | null }) {
+  if (!stance) {
+    return <span className="text-zinc-600 text-xs">–</span>;
+  }
+
+  const styles: Record<Stance, string> = {
+    supports: 'badge bg-emerald-500/20 text-emerald-400',
+    refutes: 'badge bg-red-500/20 text-red-400',
+    neutral: 'badge bg-zinc-500/20 text-zinc-300',
+  };
+
+  return (
+    <span className={styles[stance]} title={STANCE_DEFINITIONS[stance].description}>
+      {STANCE_DEFINITIONS[stance].label}
+    </span>
+  );
+}
+
 function NewSourceModal({
+  isEvent,
   onClose,
   onSubmit,
 }: {
+  isEvent: boolean;
   onClose: () => void;
   onSubmit: (params: {
     title: string;
@@ -174,6 +214,7 @@ function NewSourceModal({
     rawText?: string;
     reliabilityCode?: string;
     credibilityCode?: number;
+    stance?: Stance;
   }) => Promise<void>;
 }) {
   const [title, setTitle] = useState('');
@@ -182,11 +223,14 @@ function NewSourceModal({
   const [rawText, setRawText] = useState('');
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
+  const [stance, setStance] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+    setError(null);
     setSubmitting(true);
     try {
       await onSubmit({
@@ -196,7 +240,10 @@ function NewSourceModal({
         rawText: rawText.trim() || undefined,
         reliabilityCode: reliabilityCode || undefined,
         credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
+        stance: isEvent && stance ? (stance as Stance) : undefined,
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
@@ -255,7 +302,7 @@ function NewSourceModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium mb-1">Source Reliability</label>
               <select
@@ -287,6 +334,31 @@ function NewSourceModal({
               </select>
             </div>
           </div>
+
+          {isEvent && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Stance on Event</label>
+              <select
+                value={stance}
+                onChange={(e) => setStance(e.target.value)}
+                className="select"
+              >
+                <option value="">{STANCE_NONE_LABEL}</option>
+                {STANCES.map(value => (
+                  <option key={value} value={value} title={STANCE_DEFINITIONS[value].description}>
+                    {STANCE_DEFINITIONS[value].label}
+                  </option>
+                ))}
+              </select>
+              {stance && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  {STANCE_DEFINITIONS[stance as Stance].description}
+                </p>
+              )}
+            </div>
+          )}
+
+          {error && <p className="mb-4 text-xs text-red-400">{error}</p>}
 
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>

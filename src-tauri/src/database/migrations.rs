@@ -56,5 +56,30 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "add_events_and_source_stance",
+            sql: r#"
+                -- A container is either a plain case or a dated event. Events reuse
+                -- every case capability (notes, sources, attachments) and add a
+                -- user-editable date/time plus per-source stance.
+                ALTER TABLE cases ADD COLUMN kind TEXT NOT NULL DEFAULT 'case'
+                    CHECK (kind IN ('case','event'));
+
+                -- Calendar date (YYYY-MM-DD) and optional wall-clock time (HH:MM).
+                -- Stored as text so they stay human-readable and timezone-free.
+                ALTER TABLE cases ADD COLUMN event_date TEXT;
+                ALTER TABLE cases ADD COLUMN event_time TEXT;
+
+                -- How a source bears on its event. NULL means "none / not applicable",
+                -- which is also the only valid value for sources on plain cases.
+                ALTER TABLE sources ADD COLUMN stance TEXT
+                    CHECK (stance IN ('supports','refutes','neutral'));
+
+                CREATE INDEX IF NOT EXISTS idx_cases_kind ON cases(kind);
+                CREATE INDEX IF NOT EXISTS idx_cases_event_date ON cases(event_date);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

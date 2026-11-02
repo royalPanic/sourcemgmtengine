@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance } from '../types';
 import {
   SOURCE_TYPES,
   RELIABILITY_CODES,
   CREDIBILITY_CODES,
   RELIABILITY_DEFINITIONS,
   CREDIBILITY_DEFINITIONS,
+  STANCES,
+  STANCE_DEFINITIONS,
+  STANCE_NONE_LABEL,
 } from '../types';
+import { MediaPreview } from './MediaPreview';
+import { pickFile, type PickerMode } from '../utils/filePicker';
 
 interface DetailDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   source: SourceWithAttachments | null;
+  isEvent: boolean;
   onUpdate: (id: string, params: Partial<{
     title: string;
     sourceType: SourceType;
@@ -19,21 +25,25 @@ interface DetailDrawerProps {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
+    stance: Stance;
     customMetadata: SourceCustomMetadata;
   }>) => Promise<unknown>;
-  onAddAttachment: (sourceId: string, file: File) => Promise<unknown>;
+  onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
+  resolveAttachmentUrl: (relativePath: string) => Promise<string>;
 }
 
 export function DetailDrawer({
   isOpen,
   onClose,
   source,
+  isEvent,
   onUpdate,
-  onAddAttachment,
+  onImportAttachment,
   onDeleteAttachment,
   onOpenAttachment,
+  resolveAttachmentUrl,
 }: DetailDrawerProps) {
   const [title, setTitle] = useState('');
   const [sourceType, setSourceType] = useState<SourceType>('URL');
@@ -41,8 +51,11 @@ export function DetailDrawer({
   const [rawText, setRawText] = useState('');
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
+  const [stance, setStance] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!source) return;
@@ -52,6 +65,9 @@ export function DetailDrawer({
     setRawText(source.raw_text ?? '');
     setReliabilityCode(source.reliability_code ?? '');
     setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
+    setStance(source.stance ?? '');
+    setUploadError(null);
+    setSaveError(null);
   }, [source]);
 
   useEffect(() => {
@@ -66,6 +82,7 @@ export function DetailDrawer({
   if (!isOpen || !source) return null;
 
   const handleSave = async () => {
+    setSaveError(null);
     setSaving(true);
     try {
       await onUpdate(source.id, {
@@ -75,23 +92,40 @@ export function DetailDrawer({
         rawText,
         reliabilityCode,
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
+        stance: isEvent && stance ? (stance as Stance) : undefined,
       });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
+  const handleAttach = async (mode: PickerMode) => {
+    setUploadError(null);
     try {
-      await onAddAttachment(source.id, file);
+      const path = await pickFile(mode);
+      if (!path) return;
+      setUploading(true);
+      await onImportAttachment(source.id, path);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
   };
+
+  const handleDeleteAttachment = (attachment: SourceAttachment) => {
+    if (window.confirm(`Delete attachment "${attachment.file_name}"?`)) {
+      void onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
+    }
+  };
+
+  const media = source.attachments.filter(a => {
+    const mime = a.mime_type?.toLowerCase() ?? '';
+    return mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/');
+  });
+  const documents = source.attachments.filter(a => !media.includes(a));
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -169,55 +203,89 @@ export function DetailDrawer({
             </div>
           </section>
 
+          {isEvent && (
+            <section className="card p-4">
+              <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance on Event</h3>
+              <select value={stance} onChange={(e) => setStance(e.target.value)} className="select">
+                <option value="">{STANCE_NONE_LABEL}</option>
+                {STANCES.map(value => (
+                  <option key={value} value={value}>{STANCE_DEFINITIONS[value].label}</option>
+                ))}
+              </select>
+              {stance ? (
+                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+                  {STANCE_DEFINITIONS[stance as Stance].description}
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+                  No stance recorded. Use this when the source does not bear on the event.
+                </p>
+              )}
+            </section>
+          )}
+
           <section>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-zinc-200">
                 Attachments ({source.attachments.length})
               </h3>
-              <label className="btn-secondary cursor-pointer">
-                {uploading ? 'Uploading…' : 'Attach File'}
-                <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
-              </label>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  onClick={() => void handleAttach('media')}
+                  disabled={uploading}
+                  title="Attach an image, video, or audio file"
+                >
+                  {uploading ? 'Importing…' : 'Add Media'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  onClick={() => void handleAttach('any')}
+                  disabled={uploading}
+                  title="Attach any file"
+                >
+                  Add File
+                </button>
+              </div>
             </div>
+
+            {uploadError && (
+              <p className="mb-2 text-xs text-red-400">{uploadError}</p>
+            )}
 
             {source.attachments.length === 0 ? (
               <p className="text-xs text-zinc-500">No attachments.</p>
             ) : (
-              <ul className="space-y-1">
-                {source.attachments.map(attachment => (
-                  <li
-                    key={attachment.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 px-3 py-2"
-                  >
-                    <button
-                      type="button"
-                      className="flex-1 min-w-0 text-left"
-                      onClick={() => void onOpenAttachment(attachment.relative_path)}
-                      title="Open attachment"
-                    >
-                      <div className="text-sm text-zinc-200 truncate">{attachment.file_name}</div>
-                      <div className="text-xs text-zinc-500">
-                        {attachment.mime_type ?? 'unknown type'}
-                        {attachment.file_size != null && ` · ${formatBytes(attachment.file_size)}`}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-ghost p-1.5 text-red-400 hover:bg-red-600/20"
-                      title="Delete attachment"
-                      onClick={() => {
-                        if (window.confirm(`Delete attachment "${attachment.file_name}"?`)) {
-                          void onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
-                        }
-                      }}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-3">
+                {media.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {media.map(attachment => (
+                      <MediaPreview
+                        key={attachment.id}
+                        attachment={attachment}
+                        resolveUrl={resolveAttachmentUrl}
+                        onOpen={(path) => void onOpenAttachment(path)}
+                        onDelete={handleDeleteAttachment}
+                      />
+                    ))}
+                  </div>
+                )}
+                {documents.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {documents.map(attachment => (
+                      <MediaPreview
+                        key={attachment.id}
+                        attachment={attachment}
+                        resolveUrl={resolveAttachmentUrl}
+                        onOpen={(path) => void onOpenAttachment(path)}
+                        onDelete={handleDeleteAttachment}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </section>
 
@@ -229,13 +297,16 @@ export function DetailDrawer({
           </section>
         </div>
 
-        <footer className="flex justify-end gap-3 px-5 py-4 border-t border-zinc-800">
-          <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
-            Close
-          </button>
-          <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim()}>
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
+        <footer className="flex items-center justify-between gap-3 px-5 py-4 border-t border-zinc-800">
+          <span className="text-xs text-red-400">{saveError}</span>
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
+              Close
+            </button>
+            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim()}>
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
         </footer>
       </aside>
     </div>
@@ -248,10 +319,4 @@ function formatMetadata(raw: string): string {
   } catch {
     return raw;
   }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

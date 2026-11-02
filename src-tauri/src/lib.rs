@@ -2,6 +2,12 @@ mod commands;
 mod database;
 mod models;
 
+#[cfg(test)]
+mod scope_tests;
+
+#[cfg(test)]
+mod patch_tests;
+
 use commands::{cases, files, sources};
 use database::connection::init_sql_plugin;
 
@@ -28,6 +34,7 @@ pub fn run() {
             sources::add_source_attachment,
             sources::delete_source_attachment,
             files::save_attachment,
+            files::import_attachment,
             files::read_attachment,
             files::delete_attachment_file,
             files::open_attachment,

@@ -1,0 +1,103 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Tauri: Dev",
+      "detail": "Vite dev server + Rust backend with hot reload",
+      "type": "shell",
+      "command": "npm run tauri:dev",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "rust",
+        "fileLocation": ["relative", "${workspaceFolder}/src-tauri"],
+        "pattern": {
+          "regexp": "^(error|warning)(?:\\[[^\\]]+\\])?:\\s+(.+?)\\s+-->\\s+(.+?):(\\d+):(\\d+)$",
+          "severity": 1,
+          "message": 2,
+          "file": 3,
+          "line": 4,
+          "column": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^(\\s*VITE|\\s*Compiling|\\s*Info)",
+          "endsPattern": "(Local:\\s+http://localhost:1420|Finished\\s+`?dev`?\\s+profile)"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "Tauri: Build (release)",
+      "detail": "Full build: tsc + vite build, then cargo build --release",
+      "type": "shell",
+      "command": "npm run tauri:build",
+      "problemMatcher": ["$tsc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Tauri: Build (no bundle)",
+      "detail": "Compile the executable only, skipping installer packaging",
+      "type": "shell",
+      "command": "npx tauri build --no-bundle",
+      "problemMatcher": ["$tsc"],
+      "group": "build"
+    },
+    {
+      "label": "Frontend: Build",
+      "detail": "Typecheck + bundle the React app into dist/ (no Rust)",
+      "type": "shell",
+      "command": "npm run build",
+      "problemMatcher": ["$tsc"],
+      "group": "build"
+    },
+    {
+      "label": "Frontend: Typecheck",
+      "detail": "Type errors only, no output written",
+      "type": "shell",
+      "command": "npx tsc --noEmit",
+      "problemMatcher": ["$tsc"],
+      "group": "test"
+    },
+    {
+      "label": "Rust: Check",
+      "detail": "Fast compile check of the backend without linking",
+      "type": "shell",
+      "command": "cargo check --manifest-path src-tauri/Cargo.toml",
+      "problemMatcher": {
+        "owner": "rust",
+        "fileLocation": ["relative", "${workspaceFolder}/src-tauri"],
+        "pattern": {
+          "regexp": "^(error|warning)(?:\\[[^\\]]+\\])?:\\s+(.+?)\\s+-->\\s+(.+?):(\\d+):(\\d+)$",
+          "severity": 1,
+          "message": 2,
+          "file": 3,
+          "line": 4,
+          "column": 5
+        }
+      },
+      "group": "test"
+    },
+    {
+      "label": "Rust: Test",
+      "detail": "Run backend unit tests",
+      "type": "shell",
+      "command": "cargo test --manifest-path src-tauri/Cargo.toml",
+      "problemMatcher": {
+        "owner": "rust",
+        "fileLocation": ["relative", "${workspaceFolder}/src-tauri"],
+        "pattern": {
+          "regexp": "^(error|warning)(?:\\[[^\\]]+\\])?:\\s+(.+?)\\s+-->\\s+(.+?):(\\d+):(\\d+)$",
+          "severity": 1,
+          "message": 2,
+          "file": 3,
+          "line": 4,
+          "column": 5
+        }
+      },
+      "group": "test"
+    }
+  ]
+}

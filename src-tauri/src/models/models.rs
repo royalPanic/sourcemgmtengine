@@ -1,11 +1,70 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// A container is either a plain case or a dated event. Events support
+/// everything a case does, plus a user-editable date/time.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerKind {
+    Case,
+    Event,
+}
+
+impl ContainerKind {
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "event" => ContainerKind::Event,
+            _ => ContainerKind::Case,
+        }
+    }
+
+    pub fn as_db(&self) -> &'static str {
+        match self {
+            ContainerKind::Case => "case",
+            ContainerKind::Event => "event",
+        }
+    }
+}
+
+/// How a source bears on the event it belongs to.
+///
+/// `None` (the absence of a stance) means "none / not applicable" and is the
+/// only valid state for sources attached to a plain case.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Stance {
+    Supports,
+    Refutes,
+    Neutral,
+}
+
+impl Stance {
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "supports" => Some(Stance::Supports),
+            "refutes" => Some(Stance::Refutes),
+            "neutral" => Some(Stance::Neutral),
+            _ => None,
+        }
+    }
+
+    pub fn as_db(&self) -> &'static str {
+        match self {
+            Stance::Supports => "supports",
+            Stance::Refutes => "refutes",
+            Stance::Neutral => "neutral",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Case {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
+    pub kind: ContainerKind,
+    pub event_date: Option<String>,
+    pub event_time: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -69,6 +128,7 @@ pub struct Source {
     pub raw_text: Option<String>,
     pub reliability_code: Option<String>,
     pub credibility_code: Option<i32>,
+    pub stance: Option<Stance>,
     pub custom_metadata: String,
     pub created_at: String,
     pub updated_at: String,
@@ -93,12 +153,21 @@ pub struct SourceWithAttachments {
 }
 
 impl Case {
-    pub fn new(title: String, description: Option<String>) -> Self {
+    pub fn new(
+        title: String,
+        description: Option<String>,
+        kind: ContainerKind,
+        event_date: Option<String>,
+        event_time: Option<String>,
+    ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
             id: Uuid::new_v4().to_string(),
             title,
             description,
+            kind,
+            event_date,
+            event_time,
             created_at: now.clone(),
             updated_at: now,
         }
@@ -126,6 +195,7 @@ impl Source {
         raw_text: Option<String>,
         reliability_code: Option<String>,
         credibility_code: Option<i32>,
+        stance: Option<Stance>,
         custom_metadata: serde_json::Value,
     ) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
@@ -138,6 +208,7 @@ impl Source {
             raw_text,
             reliability_code,
             credibility_code,
+            stance,
             custom_metadata: custom_metadata.to_string(),
             created_at: now.clone(),
             updated_at: now,

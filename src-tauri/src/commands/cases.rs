@@ -3,25 +3,54 @@ use sqlx::Row;
 use chrono::Utc;
 
 use crate::database::pool;
-use crate::models::models::{Case, CaseNote};
+use crate::models::models::{Case, CaseNote, ContainerKind};
 
-async fn fetch_case(app: &AppHandle, id: &str) -> Result<Option<Case>, String> {
-    let pool = pool::pool(app).await?;
-    let row = sqlx::query(
-        "SELECT id, title, description, created_at, updated_at FROM cases WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| format!("Failed to get case: {}", e))?;
+const CASE_COLUMNS: &str = "id, title, description, kind, event_date, event_time, created_at, updated_at";
 
-    Ok(row.map(|row| Case {
+/// Interprets a patch value for an optional column.
+///
+/// Tauri's command deserializer maps both a missing key and an explicit `null`
+/// to `None`, so the two cannot be told apart. Instead the frontend sends an
+/// empty string to clear a field:
+///
+/// * `None`      — field omitted, leave the stored value alone
+/// * `Some("")`  — clear the field (bind NULL)
+/// * `Some(v)`   — set the field to `v`
+fn patch_optional(value: Option<String>) -> Option<Option<String>> {
+    value.map(|v| {
+        let trimmed = v.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn case_from_row(row: &sqlx::sqlite::SqliteRow) -> Case {
+    let kind: String = row.get("kind");
+    Case {
         id: row.get("id"),
         title: row.get("title"),
         description: row.get("description"),
+        kind: ContainerKind::from_db(&kind),
+        event_date: row.get("event_date"),
+        event_time: row.get("event_time"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
-    }))
+    }
+}
+
+async fn fetch_case(app: &AppHandle, id: &str) -> Result<Option<Case>, String> {
+    let pool = pool::pool(app).await?;
+    let query = format!("SELECT {} FROM cases WHERE id = ?", CASE_COLUMNS);
+    let row = sqlx::query(&query)
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to get case: {}", e))?;
+
+    Ok(row.map(|row| case_from_row(&row)))
 }
 
 async fn fetch_case_note(app: &AppHandle, case_id: &str) -> Result<Option<CaseNote>, String> {
@@ -42,22 +71,97 @@ async fn fetch_case_note(app: &AppHandle, case_id: &str) -> Result<Option<CaseNo
     }))
 }
 
+/// Rejects a date/time pair that does not match the expected shape, so bad
+/// input never reaches the database.
+fn validate_event_fields(
+    kind: &ContainerKind,
+    event_date: &Option<String>,
+    event_time: &Option<String>,
+) -> Result<(), String> {
+    if let Some(date) = event_date {
+        if !date.is_empty() && !is_iso_date(date) {
+            return Err(format!("Event date must be YYYY-MM-DD, got \"{}\"", date));
+        }
+    }
+
+    if let Some(time) = event_time {
+        if !time.is_empty() && !is_hh_mm(time) {
+            return Err(format!("Event time must be HH:MM, got \"{}\"", time));
+        }
+    }
+
+    if *kind == ContainerKind::Case {
+        if event_date.as_deref().is_some_and(|d| !d.is_empty())
+            || event_time.as_deref().is_some_and(|t| !t.is_empty())
+        {
+            return Err("Only events can have a date or time".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn is_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    let digits_ok = value
+        .char_indices()
+        .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
+    if !digits_ok {
+        return false;
+    }
+    let month: u32 = value[5..7].parse().unwrap_or(0);
+    let day: u32 = value[8..10].parse().unwrap_or(0);
+    (1..=12).contains(&month) && (1..=31).contains(&day)
+}
+
+fn is_hh_mm(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 5 || bytes[2] != b':' {
+        return false;
+    }
+    let digits_ok = value
+        .char_indices()
+        .all(|(i, c)| i == 2 || c.is_ascii_digit());
+    if !digits_ok {
+        return false;
+    }
+    let hour: u32 = value[0..2].parse().unwrap_or(99);
+    let minute: u32 = value[3..5].parse().unwrap_or(99);
+    hour < 24 && minute < 60
+}
+
 #[command]
 pub async fn create_case(
     app: AppHandle,
     title: String,
     description: Option<String>,
+    kind: Option<ContainerKind>,
+    event_date: Option<String>,
+    event_time: Option<String>,
 ) -> Result<Case, String> {
+    let kind = kind.unwrap_or(ContainerKind::Case);
+    // An event may be created before its date is known, so both fields are
+    // optional. Empty strings are normalised to NULL.
+    let event_date = event_date.filter(|d| !d.trim().is_empty());
+    let event_time = event_time.filter(|t| !t.trim().is_empty());
+    validate_event_fields(&kind, &event_date, &event_time)?;
+
     let pool = pool::pool(&app).await?;
-    let case = Case::new(title, description);
+    let case = Case::new(title, description, kind, event_date, event_time);
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        "INSERT INTO cases (id, title, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO cases (id, title, description, kind, event_date, event_time, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&case.id)
     .bind(&case.title)
     .bind(&case.description)
+    .bind(case.kind.as_db())
+    .bind(&case.event_date)
+    .bind(&case.event_time)
     .bind(&now)
     .bind(&now)
     .execute(&pool)
@@ -82,23 +186,16 @@ pub async fn create_case(
 #[command]
 pub async fn get_cases(app: AppHandle) -> Result<Vec<Case>, String> {
     let pool = pool::pool(&app).await?;
-    let rows = sqlx::query(
-        "SELECT id, title, description, created_at, updated_at FROM cases ORDER BY updated_at DESC",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| format!("Failed to get cases: {}", e))?;
+    let query = format!(
+        "SELECT {} FROM cases ORDER BY updated_at DESC",
+        CASE_COLUMNS
+    );
+    let rows = sqlx::query(&query)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| format!("Failed to get cases: {}", e))?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| Case {
-            id: row.get("id"),
-            title: row.get("title"),
-            description: row.get("description"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        })
-        .collect())
+    Ok(rows.iter().map(case_from_row).collect())
 }
 
 #[command]
@@ -112,9 +209,30 @@ pub async fn update_case(
     id: String,
     title: Option<String>,
     description: Option<String>,
+    event_date: Option<String>,
+    event_time: Option<String>,
 ) -> Result<Case, String> {
     let pool = pool::pool(&app).await?;
     let now = Utc::now().to_rfc3339();
+
+    let existing = fetch_case(&app, &id)
+        .await?
+        .ok_or("Case not found".to_string())?;
+
+    let event_date = patch_optional(event_date);
+    let event_time = patch_optional(event_time);
+
+    // Validate against the effective post-update values so a partial update
+    // cannot leave an event in an inconsistent state.
+    let effective_date = match &event_date {
+        Some(patch) => patch.clone(),
+        None => existing.event_date.clone(),
+    };
+    let effective_time = match &event_time {
+        Some(patch) => patch.clone(),
+        None => existing.event_time.clone(),
+    };
+    validate_event_fields(&existing.kind, &effective_date, &effective_time)?;
 
     let mut updates: Vec<&str> = Vec::new();
     if title.is_some() {
@@ -123,9 +241,15 @@ pub async fn update_case(
     if description.is_some() {
         updates.push("description = ?");
     }
+    if event_date.is_some() {
+        updates.push("event_date = ?");
+    }
+    if event_time.is_some() {
+        updates.push("event_time = ?");
+    }
 
     if updates.is_empty() {
-        return fetch_case(&app, &id).await?.ok_or("Case not found".to_string());
+        return Ok(existing);
     }
 
     updates.push("updated_at = ?");
@@ -137,6 +261,12 @@ pub async fn update_case(
     }
     if let Some(description) = description {
         statement = statement.bind(description);
+    }
+    if let Some(event_date) = event_date {
+        statement = statement.bind(event_date);
+    }
+    if let Some(event_time) = event_time {
+        statement = statement.bind(event_time);
     }
     statement
         .bind(&now)

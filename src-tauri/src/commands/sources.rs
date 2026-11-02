@@ -4,12 +4,13 @@ use serde_json::Value;
 use chrono::Utc;
 
 use crate::database::pool;
-use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType};
+use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType, Stance};
 
-const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, custom_metadata, created_at, updated_at";
+const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, custom_metadata, created_at, updated_at";
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
+    let stance_str: Option<String> = row.get("stance");
     Source {
         id: row.get("id"),
         case_id: row.get("case_id"),
@@ -19,6 +20,7 @@ fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
         raw_text: row.get("raw_text"),
         reliability_code: row.get("reliability_code"),
         credibility_code: row.get("credibility_code"),
+        stance: stance_str.as_deref().and_then(Stance::from_db),
         custom_metadata: row.get("custom_metadata"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -71,6 +73,31 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
     Ok(Some(SourceWithAttachments { source, attachments }))
 }
 
+/// A stance only makes sense on an event. Sources on plain cases must leave it
+/// unset, so this rejects the combination rather than silently storing it.
+async fn validate_stance(
+    app: &AppHandle,
+    case_id: &str,
+    stance: &Option<Stance>,
+) -> Result<(), String> {
+    if stance.is_none() {
+        return Ok(());
+    }
+
+    let pool = pool::pool(app).await?;
+    let kind: Option<String> = sqlx::query_scalar("SELECT kind FROM cases WHERE id = ?")
+        .bind(case_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to look up container kind: {}", e))?;
+
+    match kind.as_deref() {
+        Some("event") => Ok(()),
+        Some(_) => Err("Stance can only be set on sources belonging to an event".to_string()),
+        None => Err("Container not found".to_string()),
+    }
+}
+
 #[command]
 pub async fn create_source(
     app: AppHandle,
@@ -81,8 +108,11 @@ pub async fn create_source(
     raw_text: Option<String>,
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
+    stance: Option<Stance>,
     custom_metadata: Value,
 ) -> Result<Source, String> {
+    validate_stance(&app, &case_id, &stance).await?;
+
     let pool = pool::pool(&app).await?;
     let source = Source::new(
         case_id,
@@ -92,13 +122,14 @@ pub async fn create_source(
         raw_text,
         reliability_code,
         credibility_code,
+        stance,
         custom_metadata,
     );
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, custom_metadata, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, custom_metadata, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&source.id)
     .bind(&source.case_id)
@@ -108,6 +139,7 @@ pub async fn create_source(
     .bind(&source.raw_text)
     .bind(&source.reliability_code)
     .bind(source.credibility_code)
+    .bind(source.stance.as_ref().map(|s| s.as_db()))
     .bind(&source.custom_metadata)
     .bind(&now)
     .bind(&now)
@@ -159,10 +191,17 @@ pub async fn update_source(
     raw_text: Option<String>,
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
+    stance: Option<Stance>,
     custom_metadata: Option<Value>,
 ) -> Result<Source, String> {
     let pool = pool::pool(&app).await?;
     let now = Utc::now().to_rfc3339();
+
+    let existing = fetch_source(&app, &id)
+        .await?
+        .ok_or("Source not found".to_string())?;
+
+    validate_stance(&app, &existing.source.case_id, &stance).await?;
 
     let mut updates: Vec<&str> = Vec::new();
     if title.is_some() {
@@ -183,15 +222,15 @@ pub async fn update_source(
     if credibility_code.is_some() {
         updates.push("credibility_code = ?");
     }
+    if stance.is_some() {
+        updates.push("stance = ?");
+    }
     if custom_metadata.is_some() {
         updates.push("custom_metadata = ?");
     }
 
     if updates.is_empty() {
-        return fetch_source(&app, &id)
-            .await?
-            .map(|s| s.source)
-            .ok_or("Source not found".to_string());
+        return Ok(existing.source);
     }
 
     updates.push("updated_at = ?");
@@ -215,6 +254,9 @@ pub async fn update_source(
     }
     if let Some(credibility_code) = credibility_code {
         statement = statement.bind(credibility_code);
+    }
+    if let Some(stance) = stance {
+        statement = statement.bind(stance.as_db().to_string());
     }
     if let Some(custom_metadata) = custom_metadata {
         statement = statement.bind(custom_metadata.to_string());

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { casesApi } from '../api/tauri';
-import type { Case, CaseNote } from '../types';
+import type { Case, CaseNote, ContainerKind } from '../types';
 
 export function useCases() {
   const [cases, setCases] = useState<Case[]>([]);
@@ -24,15 +24,26 @@ export function useCases() {
     loadCases();
   }, [loadCases]);
 
-  const createCase = async (title: string, description?: string) => {
-    const newCase = await casesApi.create(title, description);
+  const createCase = async (params: {
+    title: string;
+    description?: string;
+    kind?: ContainerKind;
+    eventDate?: string;
+    eventTime?: string;
+  }) => {
+    const newCase = await casesApi.create(params);
     setCases(prev => [newCase, ...prev]);
     return newCase;
   };
 
-  const updateCase = async (id: string, title?: string, description?: string) => {
-    const updated = await casesApi.update(id, title, description);
-    setCases(prev => prev.map(c => c.id === id ? updated : c));
+  const updateCase = async (id: string, params: Partial<{
+    title: string;
+    description: string;
+    eventDate: string;
+    eventTime: string;
+  }>) => {
+    const updated = await casesApi.update(id, params);
+    setCases(prev => prev.map(c => (c.id === id ? updated : c)));
     return updated;
   };
 
