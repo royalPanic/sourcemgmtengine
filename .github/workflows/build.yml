@@ -23,6 +23,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check manifest versions agree
+        # The release job only validates at tag time. Catching drift here means a
+        # forgotten bump fails on the PR instead of a failed release.
+        run: |
+          fail=0
+          pkg="$(node -p "require('./package.json').version")"
+          conf="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          lock="$(node -p "require('./package-lock.json').version")"
+          cargo="$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
+          cargo_lock="$(grep -A1 -m1 '^name = "osint-case-manager"$' src-tauri/Cargo.lock | sed -nE 's/^version = "(.*)"$/\1/p')"
+
+          check() {
+            local file="$1" actual="$2"
+            if [[ "$actual" != "$pkg" ]]; then
+              echo "::error file=$file::version is '$actual' but package.json says '$pkg'"
+              fail=1
+            fi
+          }
+          check src-tauri/tauri.conf.json "$conf"
+          check package-lock.json "$lock"
+          check src-tauri/Cargo.toml "$cargo"
+          check src-tauri/Cargo.lock "$cargo_lock"
+
+          echo "All manifests at $pkg"
+          exit $fail
+
       - name: Typecheck
         run: npx tsc --noEmit
 
