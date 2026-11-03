@@ -80,13 +80,45 @@ CREATE TABLE IF NOT EXISTS source_attachments (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
 );
+
+-- Global, reusable entities (people and organisations) that sources report on
+CREATE TABLE IF NOT EXISTS meta_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'organization'
+        CHECK (kind IN ('person','organization','other')),
+    description TEXT,
+    url TEXT,
+    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
+    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 ```
+
+`cases` also carries `kind`, `event_date`, and `event_time`; `sources` also carries
+`stance`, `source_date`, `source_time`, `reference_source_id`, and
+`reference_meta_source_id` (added in migrations v2–v4).
+
 #### Schema Rules for AI Agents
 - Never Hardcode Dynamic Metadata: Dynamic or expandable parameters (e.g., TLP ratings, coordinates, social handles) must be stored inside the custom_metadata JSON column.
 
 - Cascading Deletes: Foreign keys must retain ON DELETE CASCADE so deleting a Case purges all related notes, sources, and media references.
 
+- Reference Deletes Are SET NULL: `reference_source_id` and `reference_meta_source_id` use ON DELETE SET NULL. A citing source must survive its reference being deleted, keeping the rating it inherited; only the link is cleared.
+
 - Relative File Paths: Store relative relative paths inside source_attachments.relative_path rather than absolute system paths to preserve workspace portability across machines.
+
+### Meta Sources and Source References
+These two features are coupled; changing one means checking the other.
+
+- A **meta source** is a person or organisation (news agency, official, spokesperson) that persists across all cases and events. It carries its own Admiralty rating.
+
+- A **source reference** points at either a sibling source in the same container or a meta source — never both, never itself, never across containers. `commands/references.rs` owns this validation; SQLite triggers back it up.
+
+- **Rating inheritance is live.** A citing source mirrors its reference's rating, and `propagate_rating` / `propagate_meta_rating` push changes down the chain. Any new write path that changes a rating must call them, or citations silently drift.
+
+- **Only a *source* reference locks the stance.** Citing a sibling source duplicates one piece of evidence, so the stance is forced to none and the source is excluded from every event dashboard statistic (`isReferenceLinked` in `utils/analytics.ts`). Citing a **meta source** keeps the stance editable and the source countable, because one entity (a wire service) can express several viewpoints across different captures. `ReferenceInput::locks_stance` and `locksStance` in `ReferenceSelect.tsx` are the shared predicates — use them rather than re-deriving the condition.
 
 ## 4. UI / UX Design System & Component Guidelines
 ### Dark Mode & Visual Styling

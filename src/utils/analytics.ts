@@ -90,6 +90,24 @@ function bucketOf(source: SourceWithAttachments): StanceBucket {
   return source.stance ?? 'none';
 }
 
+/**
+ * True when a source duplicates another capture, which makes it a report *of*
+ * one piece of evidence rather than an independent one.
+ *
+ * Only a reference to a **sibling source** counts. A meta source is a person or
+ * organisation that may express several viewpoints (a wire service publishing
+ * many articles), so its citations stay independent evidence and remain in the
+ * dashboard.
+ */
+export function isReferenceLinked(source: SourceWithAttachments): boolean {
+  return Boolean(source.reference_source_id);
+}
+
+/** True when a source cites a meta source. */
+export function isMetaReferenced(source: SourceWithAttachments): boolean {
+  return Boolean(source.reference_meta_source_id);
+}
+
 function mean(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -174,17 +192,22 @@ function summarizeCredibility(
 /**
  * Computes per-stance Admiralty averages for an event.
  *
- * Sources with no stance fall into the `none` bucket so the totals always
- * reconcile with the source count.
+ * Sources that cite a sibling source are dropped entirely — see
+ * [`isReferenceLinked`]. Sources citing a meta source are kept, since the
+ * entity may express several viewpoints. Remaining sources with no stance fall
+ * into the `none` bucket so the totals always reconcile with the source count
+ * that is actually being measured.
  */
 export function computeEventAnalytics(
   sources: SourceWithAttachments[],
   options: AnalyticsOptions
 ): EventAnalytics {
+  const independent = sources.filter(source => !isReferenceLinked(source));
+
   const grouped = new Map<StanceBucket, SourceWithAttachments[]>();
   for (const bucket of STANCE_BUCKETS) grouped.set(bucket, []);
 
-  for (const source of sources) {
+  for (const source of independent) {
     grouped.get(bucketOf(source))!.push(source);
   }
 
@@ -199,12 +222,12 @@ export function computeEventAnalytics(
   });
 
   return {
-    totalSources: sources.length,
+    totalSources: independent.length,
     unassigned: grouped.get('none')!.length,
     byStance,
     overall: {
-      reliability: summarizeReliability(sources, options),
-      credibility: summarizeCredibility(sources, options),
+      reliability: summarizeReliability(independent, options),
+      credibility: summarizeCredibility(independent, options),
     },
   };
 }
@@ -213,6 +236,23 @@ export function computeEventAnalytics(
 export function formatAverage(average: number | null): string {
   if (average === null) return '—';
   return average.toFixed(1);
+}
+
+/**
+ * Converts an Admiralty average into a bar length as a percentage.
+ *
+ * The scale runs 1 (best) to 6 (worst), but a longer bar should read as
+ * *better*, so the length is inverted: an average of 1 fills the track and an
+ * average of 6 is a sliver. The bar is drawn from the right edge, which keeps
+ * the visual consistent with the 6 → 1 axis beneath it.
+ *
+ * `max` is the worst score (6 for both dimensions). Returns 0 for a null
+ * average so callers can leave the bar invisible.
+ */
+export function scoreToBarPercent(average: number | null, max: number): number {
+  if (average === null || max <= 0) return 0;
+  const clamped = Math.min(max, Math.max(1, average));
+  return ((max + 1 - clamped) / max) * 100;
 }
 
 /**

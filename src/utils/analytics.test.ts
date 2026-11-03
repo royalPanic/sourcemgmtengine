@@ -4,6 +4,9 @@ import {
   scoreToReliabilityLabel,
   scoreToCredibilityLabel,
   formatAverage,
+  scoreToBarPercent,
+  isReferenceLinked,
+  isMetaReferenced,
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -24,12 +27,15 @@ function source(
     reliability_code: reliability,
     credibility_code: credibility,
     stance,
+    reference_source_id: null,
+    reference_meta_source_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     attachments: [],
+    reference: null,
   };
 }
 
@@ -171,10 +177,108 @@ describe('computeEventAnalytics', () => {
   });
 });
 
+describe('reference-linked sources', () => {
+  function citing(overrides: Partial<SourceWithAttachments>): SourceWithAttachments {
+    return { ...source('supports', 'A', 1), ...overrides };
+  }
+
+  it('are excluded from every dashboard statistic', () => {
+    // One core capture plus five sibling captures echoing it. Counting the
+    // echoes would turn a single corroboration into six.
+    const sources = [
+      source('supports', 'A', 1),
+      ...Array.from({ length: 5 }, () =>
+        citing({ reference_source_id: 'source-1', stance: null })
+      ),
+    ];
+
+    const result = computeEventAnalytics(sources, opts);
+
+    expect(result.totalSources).toBe(1);
+    expect(result.overall.reliability.rated).toBe(1);
+    expect(result.byStance.find(s => s.bucket === 'supports')?.total).toBe(1);
+    expect(result.unassigned).toBe(0);
+  });
+
+  it('are excluded only when they cite a sibling source', () => {
+    const sources = [
+      source('refutes', 'B', 2),
+      citing({ reference_source_id: 'source-1', stance: null }),
+    ];
+
+    expect(computeEventAnalytics(sources, opts).totalSources).toBe(1);
+  });
+
+  it('meta-referenced sources still count', () => {
+    // A wire service publishes many articles, so two captures citing Reuters
+    // are two independent pieces of evidence, not one duplicated.
+    const sources = [
+      source('supports', 'A', 1),
+      citing({ reference_meta_source_id: 'meta-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_meta_source_id: 'meta-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
+    ];
+
+    const result = computeEventAnalytics(sources, opts);
+
+    expect(result.totalSources).toBe(3);
+    expect(result.byStance.find(s => s.bucket === 'supports')?.total).toBe(2);
+    expect(result.byStance.find(s => s.bucket === 'refutes')?.total).toBe(1);
+  });
+
+  it('do not inflate the unassigned bucket', () => {
+    // A source duplicating a sibling capture has no stance by design; that is
+    // not the same as a source the analyst forgot to classify.
+    const sources = [source(null, 'C', 3), citing({ reference_source_id: 'source-1' })];
+    expect(computeEventAnalytics(sources, opts).unassigned).toBe(1);
+  });
+
+  it('are detected by either reference column', () => {
+    expect(isReferenceLinked(source(null, null, null))).toBe(false);
+    expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
+    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(false);
+
+    expect(isMetaReferenced(source(null, null, null))).toBe(false);
+    expect(isMetaReferenced(citing({ reference_meta_source_id: 'b' }))).toBe(true);
+    expect(isMetaReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
+  });
+});
+
 describe('formatAverage', () => {
   it('formats to one decimal place', () => {
     expect(formatAverage(1)).toBe('1.0');
     expect(formatAverage(2.25)).toBe('2.3');
     expect(formatAverage(null)).toBe('—');
+  });
+});
+
+describe('scoreToBarPercent', () => {
+  it('makes the best score the longest bar', () => {
+    // 1 is the best Admiralty score, so it must fill the track.
+    expect(scoreToBarPercent(1, 6)).toBeCloseTo(100);
+  });
+
+  it('makes the worst score the shortest bar', () => {
+    // 6 is the worst, so it is a sliver rather than a full bar.
+    expect(scoreToBarPercent(6, 6)).toBeCloseTo(100 / 6);
+  });
+
+  it('decreases monotonically as the score worsens', () => {
+    const percents = [1, 2, 3, 4, 5, 6].map(score => scoreToBarPercent(score, 6));
+    for (let i = 1; i < percents.length; i += 1) {
+      expect(percents[i]).toBeLessThan(percents[i - 1]);
+    }
+  });
+
+  it('places an average of 3.5 in the middle of the track', () => {
+    expect(scoreToBarPercent(3.5, 6)).toBeCloseTo(58.33, 1);
+  });
+
+  it('returns zero for an unrated dimension', () => {
+    expect(scoreToBarPercent(null, 6)).toBe(0);
+  });
+
+  it('clamps out-of-range scores instead of overflowing the track', () => {
+    expect(scoreToBarPercent(0, 6)).toBeCloseTo(100);
+    expect(scoreToBarPercent(9, 6)).toBeCloseTo(100 / 6);
   });
 });

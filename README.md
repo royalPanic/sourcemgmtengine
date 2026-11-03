@@ -8,12 +8,17 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 
 ## Features
 
-- **Case management** — create, rename, and delete cases; deleting a case removes its notes, sources, and attachment records.
-- **Rich case notes** — a TipTap editor with headings, lists, task lists, tables, code blocks, links, highlights, and text alignment. Notes auto-save with an 800 ms debounce.
+- **Case management** — create and delete cases and events. Deleting a container removes its notes, sources, and attachment records.
+- **Rich case notes** — a TipTap editor with headings, lists, task lists, tables, links, highlights, and text alignment. Notes auto-save with an 800 ms debounce.
+- **Dated events** — events are containers with an optional date and wall-clock time, both editable from the banner. Sources attached to an event can record a stance (supports / refutes / neutral).
+- **Event dashboard** — per-stance Admiralty averages, a stance distribution, a map of geolocated sources, and a breakdown table.
+- **Geolocation** — a source can carry coordinates (decimal, DMS, UTM, or MGRS) and a place name, stored in `custom_metadata`.
 - **Structured source evaluation** — every source carries a type, URL, captured raw text, and a NATO Admiralty rating.
 - **NATO Admiralty System** — Source Reliability (A–F) and Information Credibility (1–6), each with an inline definition drawn from NATO STANAG 2064 conventions.
 - **Evidence attachments** — attach files to a source, open them in the system default application, or delete them. Files are stored under a per-source folder using relative paths so the workspace stays portable.
 - **Expandable metadata** — arbitrary key/value pairs are stored as JSON in `sources.custom_metadata`, so specialised fields (TLP markings, coordinates, social handles) never require a schema migration.
+- **Meta sources** — reusable people and organisations (news agencies, officials, spokespeople) that persist across every case and event.
+- **Source references** — a source can cite another source in the same container, or a meta source. The citing source inherits its reference's Admiralty rating; citing another *source* also locks the stance to none and excludes it from dashboard statistics, so repeated reporting never counts as independent corroboration.
 - **Dark-mode-first UI** — a tactical zinc/amber palette built for multi-monitor analysis.
 
 ---
@@ -75,7 +80,16 @@ Bundles land in `src-tauri/target/release/bundle/`:
 | Platform | Output |
 | :--- | :--- |
 | Windows | `nsis/*-setup.exe` (per-user, no admin) and `msi/*.msi` (per-machine, admin) |
-| Linux | `deb/*.deb` and `appimage/*.AppImage` |
+| Linux | `deb/*.deb`, `rpm/*.rpm`, and `appimage/*.AppImage` |
+
+`bundle.targets` is set to `"all"`, so the exact set depends on the host: each platform produces
+only the formats it can build.
+
+### Working on the UI without the backend
+
+`npm run dev` starts the Vite dev server on port 1420. The shell renders, but every `invoke` call
+fails — there is no Rust process and no database, so the case list stays empty and the app is
+effectively read-only-blank. Use `npm run tauri:dev` for anything that touches data.
 
 ### Other scripts
 
@@ -86,7 +100,8 @@ Bundles land in `src-tauri/target/release/bundle/`:
 | `npm run preview` | Serve the built frontend |
 | `npm run tauri:dev` | Full desktop app with hot reload |
 | `npm run tauri:build` | Release bundle |
-| `npm test` | Run the unit test suite |
+| `npm test` | Run the unit test suite (Vitest) |
+| `npm run test:watch` | Re-run unit tests on change |
 | `npm run gen:world-outline` | Regenerate the map's land outlines from Natural Earth |
 
 ---
@@ -95,22 +110,49 @@ Bundles land in `src-tauri/target/release/bundle/`:
 
 Releases are built by GitHub Actions and published as draft releases.
 
-1. Bump the version in **all three** manifests — they must agree or the release job fails:
-   - `package.json`
-   - `src-tauri/tauri.conf.json`
-   - `src-tauri/Cargo.toml`
-2. Commit, then tag and push:
+### 1. Bump the version
 
-   ```bash
-   git tag v2.0.1
-   git push origin v2.0.1
-   ```
+A single version string is duplicated across five files, and CI fails if they disagree. Update all of
+them together:
 
-3. The [release workflow](.github/workflows/release.yml) validates the tag against the manifests, builds
-   Windows and Linux bundles, generates `SHA256SUMS.txt`, and opens a **draft** release.
-4. Review the draft and publish it.
+| File | Field | How |
+| :--- | :--- | :--- |
+| `package.json` | `version` | `npm version <ver> --no-git-tag-version` |
+| `package-lock.json` | `version` + `packages[""].version` | updated by the `npm version` command above |
+| `src-tauri/tauri.conf.json` | `version` | edit by hand |
+| `src-tauri/Cargo.toml` | `[package] version` | edit by hand |
+| `src-tauri/Cargo.lock` | `osint-case-manager` entry | `cargo update --workspace --offline` in `src-tauri/` |
 
-You can also trigger a build manually from the Actions tab with an existing tag.
+For example, to go to `2.1.0`:
+
+```bash
+npm version 2.1.0 --no-git-tag-version
+# edit src-tauri/tauri.conf.json and src-tauri/Cargo.toml
+cd src-tauri && cargo update --workspace --offline
+```
+
+The lock files must move too: they carry the project's own version, and a stale `Cargo.lock` makes the
+bundled binaries report the wrong version.
+
+### 2. Tag and push
+
+```bash
+git tag v2.1.0
+git push origin v2.1.0
+```
+
+### 3. Let CI build it
+
+The [release workflow](.github/workflows/release.yml) validates the tag against all five manifests,
+builds Windows and Linux bundles, generates `SHA256SUMS.txt`, and opens a **draft** release.
+
+### 4. Review and publish
+
+Check the draft, then publish it. You can also trigger a build manually from the Actions tab with an
+existing tag.
+
+The `Build` workflow also re-checks the manifests on every push and pull request against `main` and
+`develop`, so a forgotten bump fails on the PR rather than at release time.
 
 ### Installers are unsigned
 
@@ -125,15 +167,19 @@ choose **More info → Run anyway**. To sign, add the certificate as repository 
 ```
 src/                        React frontend
   api/tauri.ts              Typed invoke() wrappers for every command
-  components/               Sidebar, MainContent, CaseNotesEditor,
-                            SourcesGrid, DetailDrawer
-  hooks/                    useCases, useCaseNote, useSources, useDebounce
+  components/               Sidebar, MainContent, CaseNotesEditor, SourcesGrid,
+                            DetailDrawer, Dashboard, SourceMap, MetaSourcesPanel,
+                            ReferenceSelect, MetaSourceModal
+  hooks/                    useCases, useCaseNote, useSources, useMetaSources,
+                            useDebounce
   types/index.ts            Domain types + Admiralty definition tables
+  utils/                    analytics, geo, coordinates, datetime (+ unit tests)
   styles/globals.css        Design tokens and component classes
 
 src-tauri/                  Rust backend
   src/lib.rs                Plugin registration and command handler
-  src/commands/             cases.rs, sources.rs, files.rs
+  src/commands/             cases.rs, sources.rs, files.rs, meta_sources.rs,
+                            references.rs
   src/database/             connection.rs, migrations.rs, pool.rs
   src/models/models.rs      Serde structs
   capabilities/default.json Tauri v2 permission set
@@ -156,16 +202,45 @@ Attachments are written to `attachments/<source_id>/` inside the same directory.
 ### Schema
 
 ```sql
-cases              (id, title, description, created_at, updated_at)
+cases              (id, title, description, created_at, updated_at,
+                    kind, event_date, event_time)
 case_notes         (id, case_id UNIQUE, content, updated_at)
+meta_sources       (id, name, kind, description, url,
+                    reliability_code, credibility_code, created_at, updated_at)
 sources            (id, case_id, title, source_type, url, raw_text,
-                    reliability_code, credibility_code, custom_metadata,
+                    reliability_code, credibility_code, stance,
+                    reference_source_id, reference_meta_source_id,
+                    source_date, source_time, custom_metadata,
                     created_at, updated_at)
 source_attachments (id, source_id, file_name, relative_path,
                     mime_type, file_size, created_at)
 ```
 
 Migrations are versioned through `tauri-plugin-sql` and tracked in `_sqlx_migrations`. Foreign keys declare `ON DELETE CASCADE`, and the delete commands also remove children explicitly so behaviour does not depend on the connection-level `PRAGMA foreign_keys` setting.
+
+Reference columns instead use `ON DELETE SET NULL`: deleting a source or meta source blanks the citation link but leaves the citing source — and the rating it inherited — intact.
+
+---
+
+## Meta sources and source references
+
+A **meta source** is a reusable entity — a news agency, an official, a spokesperson — stored once at workspace level and citable from any case or event. Each carries its own Admiralty rating, which is what makes the feature work.
+
+A source may **reference** exactly one of:
+
+| Target | Rating | Stance | Analytics |
+| :--- | :--- | :--- | :--- |
+| Another source in the same container | Inherited | **Locked to none** | **Excluded** |
+| A meta source | Inherited | Editable | **Counted** |
+
+The two rows differ because they mean different things. Citing a sibling source duplicates one piece of evidence, so it must not add a second corroboration. Citing a meta source is a new capture of that entity's output — a wire service publishing many articles — so each capture is independent evidence and stays measurable.
+
+Two rules follow from the intent of the feature and are enforced in the backend, not just the UI:
+
+1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the reference — or a meta source — pushes the new rating down every citation, including citations of citations.
+2. **A source that cites another source carries no stance.** Ten outlets repeating one core capture must not read as ten independent corroborations, so the stance is forced to none, the control is disabled, and the source is excluded from every event dashboard statistic.
+
+Cycles (`A → B → A`) and cross-container references are rejected. The "at most one reference" rule is additionally enforced by SQLite triggers so it holds for any future writer.
 
 ---
 
@@ -199,7 +274,13 @@ Full descriptions are shown as tooltips in the source form and inline in the det
 
 ## Security notes
 
-- **No network access.** The app makes no outbound requests; all data is local.
+- **No outbound data requests.** The app never fetches, uploads, or syncs. No HTTP client is a
+  dependency in either the frontend or the Rust binary, and no code calls `fetch` or similar.
+  (The only build-time network access is `npm run gen:world-outline`, a developer script that
+  downloads Natural Earth GeoJSON and writes it into the source tree.)
+- **CSP is disabled** (`app.security.csp` is `null` in `tauri.conf.json`). The UI renders only local
+  content, but note that a source's `url` field is displayed as plain text and never rendered as
+  HTML, so disabling the CSP does not open a script-injection path from stored data.
 - **Path containment.** Attachment paths are resolved against the app-data directory and rejected if they are absolute, contain `..`, or canonicalise outside the root.
 - **No shell interpolation.** Attachments open through the Tauri opener plugin rather than a shell command, so file names are never parsed as command-line arguments.
 - **Parameterised SQL.** Every query uses bound parameters.
@@ -209,6 +290,13 @@ Full descriptions are shown as tooltips in the source form and inline in the det
 ## Contributing
 
 See [AGENTS.md](./AGENTS.md) for the architecture rules, schema conventions, and coding standards this codebase follows.
+
+Two test suites live side by side and both must pass:
+
+```bash
+npm test                  # frontend (Vitest)
+cd src-tauri && cargo test # backend (SQLite-backed)
+```
 
 ---
 

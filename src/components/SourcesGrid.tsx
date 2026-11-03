@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
+import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
 import { formatEventDate } from './Sidebar';
 import { formatUtc } from '../utils/datetime';
 import {
@@ -18,6 +19,7 @@ interface SourcesGridProps {
   sources: SourceWithAttachments[];
   loading: boolean;
   isEvent: boolean;
+  metaSources: MetaSourceSummary[];
   onCreateSource: (params: {
     title: string;
     sourceType: SourceType;
@@ -26,6 +28,8 @@ interface SourcesGridProps {
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    referenceSourceId?: string;
+    referenceMetaSourceId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -38,6 +42,8 @@ interface SourcesGridProps {
     reliabilityCode: string;
     credibilityCode: number;
     stance: Stance;
+    referenceSourceId: string;
+    referenceMetaSourceId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -53,6 +59,7 @@ export function SourcesGrid({
   sources,
   loading,
   isEvent,
+  metaSources,
   onCreateSource,
   onDeleteSource,
   onOpenDetail,
@@ -116,6 +123,21 @@ export function SourcesGrid({
                 >
                   <td className="px-4 py-3">
                     <div className="font-medium text-zinc-100 truncate max-w-xs">{source.title}</div>
+                    {source.reference && (
+                      <div
+                        className="text-xs text-amber-400/70 truncate max-w-xs"
+                        title={
+                          source.reference.kind === 'meta'
+                            ? 'References a meta source'
+                            : 'References another source in this container'
+                        }
+                      >
+                        via {source.reference.label}
+                        {source.reference.kind === 'meta' && (
+                          <span className="text-zinc-500"> · meta</span>
+                        )}
+                      </div>
+                    )}
                     {source.url && (
                       <div className="text-xs text-zinc-500 truncate max-w-xs">{source.url}</div>
                     )}
@@ -193,6 +215,8 @@ export function SourcesGrid({
       {showNewSource && (
         <NewSourceModal
           isEvent={isEvent}
+          siblings={sources}
+          metaSources={metaSources}
           onClose={() => setShowNewSource(false)}
           onSubmit={async (params) => {
             await onCreateSource(params);
@@ -224,10 +248,14 @@ export function StanceBadge({ stance }: { stance: Stance | null }) {
 
 function NewSourceModal({
   isEvent,
+  siblings,
+  metaSources,
   onClose,
   onSubmit,
 }: {
   isEvent: boolean;
+  siblings: SourceWithAttachments[];
+  metaSources: MetaSourceSummary[];
   onClose: () => void;
   onSubmit: (params: {
     title: string;
@@ -237,6 +265,8 @@ function NewSourceModal({
     reliabilityCode?: string;
     credibilityCode?: number;
     stance?: Stance;
+    referenceSourceId?: string;
+    referenceMetaSourceId?: string;
     sourceDate?: string;
     sourceTime?: string;
   }) => Promise<void>;
@@ -248,6 +278,7 @@ function NewSourceModal({
   const [reliabilityCode, setReliabilityCode] = useState('');
   const [credibilityCode, setCredibilityCode] = useState('');
   const [stance, setStance] = useState('');
+  const [reference, setReference] = useState<ReferenceSelection>({ kind: 'none', id: '' });
   const [sourceDate, setSourceDate] = useState('');
   const [sourceTime, setSourceTime] = useState('');
   const [timeValid, setTimeValid] = useState(true);
@@ -260,6 +291,7 @@ function NewSourceModal({
     setError(null);
     setSubmitting(true);
     try {
+      const isReferenced = locksStance(reference);
       await onSubmit({
         title: title.trim(),
         sourceType,
@@ -267,7 +299,10 @@ function NewSourceModal({
         rawText: rawText.trim() || undefined,
         reliabilityCode: reliabilityCode || undefined,
         credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
-        stance: isEvent && stance ? (stance as Stance) : undefined,
+        // A source that duplicates another capture carries no stance; the
+        // backend enforces this too. Meta-referenced sources keep theirs.
+        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
+        ...referenceIds(reference),
         sourceDate: sourceDate || undefined,
         sourceTime: sourceDate && sourceTime ? sourceTime : undefined,
       });
@@ -343,6 +378,25 @@ function NewSourceModal({
             />
           </div>
 
+          <div className="mb-4">
+            <ReferenceSelect
+              value={reference}
+              siblings={siblings}
+              metaSources={metaSources}
+              disabled={submitting}
+              onChange={(next) => {
+                setReference(next);
+                // Mirror the reference's rating as the default.
+                const rating = referenceRating(next, siblings, metaSources);
+                setReliabilityCode(rating?.reliability_code ?? '');
+                setCredibilityCode(
+                  rating?.credibility_code ? String(rating.credibility_code) : ''
+                );
+                if (locksStance(next)) setStance('');
+              }}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium mb-1">Source Reliability</label>
@@ -380,9 +434,15 @@ function NewSourceModal({
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Stance on Event</label>
               <select
-                value={stance}
+                value={locksStance(reference) ? '' : stance}
                 onChange={(e) => setStance(e.target.value)}
                 className="select"
+                disabled={locksStance(reference)}
+                title={
+                  locksStance(reference)
+                    ? 'A source that duplicates another capture carries no stance'
+                    : undefined
+                }
               >
                 <option value="">{STANCE_NONE_LABEL}</option>
                 {STANCES.map(value => (
@@ -391,11 +451,15 @@ function NewSourceModal({
                   </option>
                 ))}
               </select>
-              {stance && (
+              {locksStance(reference) ? (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Locked to none: this duplicates another capture.
+                </p>
+              ) : stance ? (
                 <p className="mt-2 text-xs text-zinc-500">
                   {STANCE_DEFINITIONS[stance as Stance].description}
                 </p>
-              )}
+              ) : null}
             </div>
           )}
 

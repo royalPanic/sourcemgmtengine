@@ -4,6 +4,7 @@ import { SourceMap } from './SourceMap';
 import {
   computeEventAnalytics,
   formatAverage,
+  scoreToBarPercent,
   STANCE_BUCKET_LABELS,
   type StanceBucket,
   type StanceStats,
@@ -62,7 +63,7 @@ export function Dashboard({ sources, loading }: DashboardProps) {
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Event Dashboard</h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Admiralty averages per stance. Lower scores are better.
+              Admiralty averages per stance. Longer bars mean more reliable, credible sources.
             </p>
           </div>
           <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
@@ -103,6 +104,7 @@ export function Dashboard({ sources, loading }: DashboardProps) {
 
           <section className="card p-4">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">Average Reliability by Stance</h3>
+            <p className="text-[11px] text-zinc-500 -mt-2 mb-3">Longer bar = more reliable</p>
             <DimensionBars
               byStance={analytics.byStance}
               dimension="reliability"
@@ -112,6 +114,7 @@ export function Dashboard({ sources, loading }: DashboardProps) {
 
           <section className="card p-4 xl:col-span-2">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">Average Credibility by Stance</h3>
+            <p className="text-[11px] text-zinc-500 -mt-2 mb-3">Longer bar = more credible</p>
             <DimensionBars
               byStance={analytics.byStance}
               dimension="credibility"
@@ -172,8 +175,9 @@ export function Dashboard({ sources, loading }: DashboardProps) {
 
         <p className="text-[11px] text-zinc-600 leading-relaxed">
           Reliability is scored A=1 … F=6 and credibility 1–6, so a lower average indicates a
-          more trustworthy body of evidence. Averages only include sources that carry a rating
-          for that dimension.
+          more trustworthy body of evidence — which is why the bars above grow right-to-left and
+          get longer as the average improves. Averages only include sources that carry a rating
+          for that dimension, and sources that duplicate another capture are excluded entirely.
         </p>
       </div>
     </div>
@@ -268,7 +272,10 @@ function DimensionBars({
     <div className="space-y-2.5">
       {rows.map(stats => {
         const dim = stats[dimension];
-        const pct = dim.average === null ? 0 : (dim.average / max) * 100;
+        // Bars grow from the right edge and get longer as the score improves,
+        // so a weak stance is a short stub at the right. Length reads as
+        // quality, avoiding the inverted "bigger bar means worse" trap.
+        const pct = scoreToBarPercent(dim.average, max);
 
         return (
           <div key={stats.bucket} className="flex items-center gap-3">
@@ -277,7 +284,7 @@ function DimensionBars({
             </span>
             <div className="flex-1 h-5 rounded bg-zinc-950/60 overflow-hidden relative">
               <div
-                className="h-full rounded transition-all"
+                className="absolute inset-y-0 right-0 rounded transition-all"
                 style={{
                   width: `${pct}%`,
                   backgroundColor: BUCKET_COLORS[stats.bucket],
@@ -301,6 +308,8 @@ function DimensionBars({
       <div className="flex items-center gap-3 pt-1">
         <span className="w-24 shrink-0" />
         <div className="flex-1 flex justify-between text-[10px] text-zinc-600 tabular-nums">
+          {/* Bars are anchored right, so a 1 reaches the far left and a 6 stays
+              near the right: the axis runs best → worst left to right. */}
           <span>1 (best)</span>
           <span>6 (worst)</span>
         </div>
