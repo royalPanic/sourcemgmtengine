@@ -29,6 +29,7 @@ function App() {
     deleteAttachment,
     openAttachment,
     getAttachmentUrl,
+    downloadMedia,
     reloadQuietly: reloadSources,
   } = useSources(selectedCaseId);
 
@@ -154,6 +155,7 @@ function App() {
         onDeleteAttachment={deleteAttachment}
         onOpenAttachment={openAttachment}
         resolveAttachmentUrl={getAttachmentUrl}
+        downloadMedia={downloadMedia}
       />
       {newContainerKind && (
         <NewContainerModal

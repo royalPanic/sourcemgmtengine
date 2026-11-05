@@ -51,6 +51,7 @@ interface DetailDrawerProps {
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
   resolveAttachmentUrl: (relativePath: string) => Promise<string>;
+  downloadMedia: (sourceId: string, url: string) => Promise<unknown>;
 }
 
 export function DetailDrawer({
@@ -65,6 +66,7 @@ export function DetailDrawer({
   onDeleteAttachment,
   onOpenAttachment,
   resolveAttachmentUrl,
+  downloadMedia,
 }: DetailDrawerProps) {
   const [title, setTitle] = useState('');
   const [sourceType, setSourceType] = useState<SourceType>('URL');
@@ -90,7 +92,9 @@ export function DetailDrawer({
   coordFormatRef.current = coordFormat;
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -112,7 +116,6 @@ export function DetailDrawer({
     setCoordError(null);
     setLocationLabel(location?.label ?? '');
 
-    setUploadError(null);
     setSaveError(null);
   }, [source]);
 
@@ -227,6 +230,26 @@ export function DetailDrawer({
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDownloadMedia = async () => {
+    if (!source.url) return;
+    setDownloadError(null);
+    if (
+      !window.confirm(
+        `Download media from "${source.url}" and preserve it as an attachment?\n\nThis uses the network and may take a while for large files.`,
+      )
+    ) {
+      return;
+    }
+    setDownloading(true);
+    try {
+      await downloadMedia(source.id, source.url);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -397,7 +420,7 @@ export function DetailDrawer({
                   type="button"
                   className="btn-secondary text-xs"
                   onClick={() => void handleAttach('media')}
-                  disabled={uploading}
+                  disabled={uploading || downloading}
                   title="Attach an image, video, or audio file"
                 >
                   {uploading ? 'Importing…' : 'Add Media'}
@@ -406,16 +429,31 @@ export function DetailDrawer({
                   type="button"
                   className="btn-secondary text-xs"
                   onClick={() => void handleAttach('any')}
-                  disabled={uploading}
+                  disabled={uploading || downloading}
                   title="Attach any file"
                 >
                   Add File
                 </button>
+                {source.url && (
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs"
+                    onClick={handleDownloadMedia}
+                    disabled={downloading || !source.url}
+                    title="Download media from this URL and preserve it as an attachment"
+                  >
+                    {downloading ? 'Downloading…' : 'Download Media'}
+                  </button>
+                )}
               </div>
             </div>
 
             {uploadError && (
               <p className="mb-2 text-xs text-red-400">{uploadError}</p>
+            )}
+
+            {downloadError && (
+              <p className="mb-2 text-xs text-red-400">{downloadError}</p>
             )}
 
             {source.attachments.length === 0 ? (

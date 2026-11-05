@@ -192,6 +192,9 @@ export const filesApi = {
   deleteAttachmentFile: (relativePath: string) => 
     invoke<void>('delete_attachment_file', { relativePath }),
   
+  downloadMedia: (sourceId: string, url: string) => 
+    invoke<SourceAttachment>('download_media', { sourceId, url }),
+  
   openAttachment: (relativePath: string) => 
     invoke<void>('open_attachment', { relativePath }),
   

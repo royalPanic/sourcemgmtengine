@@ -150,6 +150,7 @@ pub enum SourceType {
     Image,
     Video,
     Audio,
+    Media,
     Other,
 }
 
@@ -163,6 +164,7 @@ impl SourceType {
             "Image" => SourceType::Image,
             "Video" => SourceType::Video,
             "Audio" => SourceType::Audio,
+            "Media" => SourceType::Media,
             _ => SourceType::Other,
         }
     }
@@ -175,6 +177,7 @@ impl SourceType {
             SourceType::Image => "Image",
             SourceType::Video => "Video",
             SourceType::Audio => "Audio",
+            SourceType::Media => "Media",
             SourceType::Other => "Other",
         }
     }

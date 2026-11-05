@@ -151,6 +151,21 @@ export function useSources(caseId: string | null) {
     ));
   };
 
+  /**
+   * Downloads media from a source URL using the bundled yt-dlp sidecar and
+   * stores it as an attachment on the source. Network is only used when this
+   * is explicitly invoked.
+   */
+  const downloadMedia = async (sourceId: string, url: string) => {
+    const attachment = await filesApi.downloadMedia(sourceId, url);
+    setSources(prev => prev.map(s =>
+      s.id === sourceId
+        ? { ...s, attachments: [...s.attachments, attachment] }
+        : s
+    ));
+    return attachment;
+  };
+
   const openAttachment = async (relativePath: string) => {
     await filesApi.openAttachment(relativePath);
   };
@@ -171,5 +186,6 @@ export function useSources(caseId: string | null) {
     deleteAttachment,
     openAttachment,
     getAttachmentUrl,
+    downloadMedia,
   };
 }

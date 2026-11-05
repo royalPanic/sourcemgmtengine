@@ -23,7 +23,7 @@ export interface CaseNote {
   updated_at: string;
 }
 
-export type SourceType = 'URL' | 'Document' | 'Social Media' | 'Image' | 'Video' | 'Audio' | 'Other';
+export type SourceType = 'URL' | 'Document' | 'Social Media' | 'Image' | 'Video' | 'Audio' | 'Media' | 'Other';
 
 export type ReliabilityCode = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 export type CredibilityCode = 1 | 2 | 3 | 4 | 5 | 6;
@@ -165,7 +165,7 @@ export const CREDIBILITY_DEFINITIONS: Record<CredibilityCode, { label: string; d
   6: { label: '6 - Truth Cannot Be Judged', description: 'Insufficient information to evaluate credibility. May or may not be true.' },
 };
 
-export const SOURCE_TYPES: SourceType[] = ['URL', 'Document', 'Social Media', 'Image', 'Video', 'Audio', 'Other'];
+export const SOURCE_TYPES: SourceType[] = ['URL', 'Document', 'Social Media', 'Image', 'Video', 'Audio', 'Media', 'Other'];
 
 export const RELIABILITY_CODES: ReliabilityCode[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 export const CREDIBILITY_CODES: CredibilityCode[] = [1, 2, 3, 4, 5, 6];

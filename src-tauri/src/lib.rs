@@ -24,6 +24,9 @@ mod reference_tests;
 #[cfg(test)]
 mod migration_tests;
 
+#[cfg(test)]
+mod download_tests;
+
 use commands::{cases, files, meta_sources, sources};
 use database::connection::init_sql_plugin;
 
@@ -55,6 +58,7 @@ pub fn run() {
             meta_sources::delete_meta_source,
             files::save_attachment,
             files::import_attachment,
+            files::download_media,
             files::read_attachment,
             files::delete_attachment_file,
             files::open_attachment,

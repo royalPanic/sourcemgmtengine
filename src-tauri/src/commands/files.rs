@@ -1,12 +1,16 @@
 use tauri::{command, AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use uuid::Uuid;
+
+use crate::database::pool;
+use crate::models::models::SourceAttachment;
 
 /// Upper bound for a single attachment. Media files are read fully into memory
 /// before being written, so this keeps a stray multi-gigabyte pick from
-/// exhausting the process.
-const MAX_ATTACHMENT_BYTES: u64 = 512 * 1024 * 1024;
+/// exhausting the process. 10 GB preserves full-resolution evidence.
+const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 
 /// Resolves a stored relative path against the app config directory, rejecting
 /// any path that escapes it (absolute paths, `..`, drive prefixes, etc.).
@@ -265,4 +269,130 @@ pub async fn get_attachment_path(app: AppHandle, relative_path: String) -> Resul
     let file_path = resolve_attachment_path(&app, &relative_path)?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Downloads media from a URL using yt-dlp and stores it as an attachment on
+/// the given source.
+///
+/// Network is only used when this command is invoked — the operator must
+/// explicitly click "Download Media" in the UI. The downloaded file is read
+/// into memory, written through the normal attachment store, and the temp
+/// download is removed.
+///
+/// yt-dlp (and ffmpeg for post-processing) must be on the system PATH.
+#[command]
+pub async fn download_media(
+    app: AppHandle,
+    source_id: String,
+    url: String,
+) -> Result<SourceAttachment, String> {
+    let pool = pool::pool(&app).await?;
+
+    // Verify the source exists before doing any network work.
+    let exists: Option<String> = sqlx::query_scalar("SELECT id FROM sources WHERE id = ?")
+        .bind(&source_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to look up source: {}", e))?;
+
+    let _ = exists.ok_or_else(|| format!("Source not found: {source_id}"))?;
+
+    // Resolve yt-dlp from the system PATH.
+    let yt_dlp = which::which("yt-dlp")
+        .map_err(|_| "yt-dlp not found on PATH. Install yt-dlp (and ffmpeg) to download media.".to_string())?;
+
+    let temp_dir = std::env::temp_dir().join(format!("osint-download-{source_id}"));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {e}"))?;
+
+    let output_template = temp_dir.join("%(title)s.%(ext)s");
+
+    let output = Command::new(&yt_dlp)
+        .args([
+            "--print",
+            "filename",
+            "-o",
+            output_template.to_string_lossy().as_ref(),
+            &url,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run yt-dlp: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp failed: {stderr}"));
+    }
+
+    let downloaded_path = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_string();
+
+    if downloaded_path.is_empty() {
+        return Err("yt-dlp did not report a downloaded file".to_string());
+    }
+
+    let downloaded_path = PathBuf::from(&downloaded_path);
+
+    if !downloaded_path.exists() {
+        return Err("Downloaded file not found on disk".to_string());
+    }
+
+    let metadata = std::fs::metadata(&downloaded_path)
+        .map_err(|e| format!("Failed to read downloaded file metadata: {e}"))?;
+
+    if metadata.len() > MAX_ATTACHMENT_BYTES {
+        // Clean up before erroring.
+        let _ = std::fs::remove_file(&downloaded_path);
+        return Err(format!(
+            "Downloaded file exceeds the {} GB limit",
+            MAX_ATTACHMENT_BYTES / (1024 * 1024 * 1024)
+        ));
+    }
+
+    let data = std::fs::read(&downloaded_path)
+        .map_err(|e| format!("Failed to read downloaded file: {e}"))?;
+
+    let file_name = downloaded_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download")
+        .to_string();
+
+    let relative_path = write_attachment(&app, &source_id, &file_name, &data)?;
+
+    // Clean up the temp download now that it is in the attachment store.
+    let _ = std::fs::remove_file(&downloaded_path);
+    let _ = std::fs::remove_dir(&temp_dir);
+
+    let mime_type = mime_from_extension(
+        downloaded_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or(""),
+    )
+    .to_string();
+
+    let attachment = SourceAttachment::new(
+        source_id.clone(),
+        file_name,
+        relative_path,
+        Some(mime_type),
+        Some(metadata.len() as i64),
+    );
+
+    sqlx::query(
+        "INSERT INTO source_attachments (id, source_id, file_name, relative_path, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&attachment.id)
+    .bind(&attachment.source_id)
+    .bind(&attachment.file_name)
+    .bind(&attachment.relative_path)
+    .bind(&attachment.mime_type)
+    .bind(attachment.file_size)
+    .bind(&attachment.created_at)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to record attachment: {}", e))?;
+
+    Ok(attachment)
 }
