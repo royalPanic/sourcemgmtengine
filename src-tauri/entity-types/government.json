@@ -1,0 +1,22 @@
+{
+  "id": "government",
+  "name": "Government",
+  "description": "A national, regional, or local governing body.",
+  "default_qualities": [
+    {
+      "name": "Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "Type",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "Established",
+      "type": "date",
+      "required": false
+    }
+  ]
+}

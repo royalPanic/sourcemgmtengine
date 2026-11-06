@@ -202,3 +202,101 @@ export const STANCE_DEFINITIONS: Record<Stance, { label: string; description: st
 
 /** Label for the "no stance" option, used on events and forced on plain cases. */
 export const STANCE_NONE_LABEL = 'None / N/A';
+
+// --- Entities ---
+
+/** A quality data type. */
+export type QualityType = 'string' | 'boolean' | 'integer' | 'date' | 'coordinates' | 'address';
+
+export const QUALITY_TYPES: QualityType[] = ['string', 'boolean', 'integer', 'date', 'coordinates', 'address'];
+
+/** A single quality definition within an entity type template. */
+export interface EntityTypeQuality {
+  name: string;
+  type: QualityType;
+  required: boolean;
+}
+
+/** An entity type template, loaded from a JSON file. */
+export interface EntityType {
+  id: string;
+  name: string;
+  description: string | null;
+  default_qualities: EntityTypeQuality[];
+}
+
+/** A stored entity. */
+export interface Entity {
+  id: string;
+  entity_type: string;
+  name: string;
+  description: string | null;
+  case_id: string | null;
+  is_global: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A stored quality on an entity. */
+export interface EntityQuality {
+  id: string;
+  entity_id: string;
+  quality_name: string;
+  quality_type: QualityType;
+  value_string: string | null;
+  value_integer: number | null;
+  value_boolean: boolean | null;
+  value_date: string | null;
+  value_coordinates: string | null;
+  value_address: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A link between a quality and a source, carrying the source's Admiralty rating at citation time. */
+export interface QualitySourceRef {
+  id: string;
+  quality_id: string;
+  source_id: string;
+  source_title: string | null;
+  reliability_code: ReliabilityCode | null;
+  credibility_code: CredibilityCode | null;
+  created_at: string;
+}
+
+/** A quality plus the sources referenced as provenance. */
+export interface EntityQualityWithRefs extends EntityQuality {
+  source_refs: QualitySourceRef[];
+}
+
+/** Computes the average Admiralty rating for a quality's source references. */
+export function admiraltyAverage(refs: QualitySourceRef[]): {
+  reliability: ReliabilityCode | null;
+  credibility: CredibilityCode | null;
+} {
+  if (refs.length === 0) {
+    return { reliability: null, credibility: null };
+  }
+
+  const reliabilityScores: number[] = [];
+  const credibilityScores: number[] = [];
+
+  for (const ref_ of refs) {
+    if (ref_.reliability_code) {
+      const score = RELIABILITY_CODES.indexOf(ref_.reliability_code) + 1;
+      if (score > 0) reliabilityScores.push(score);
+    }
+    if (ref_.credibility_code != null) {
+      credibilityScores.push(ref_.credibility_code);
+    }
+  }
+
+  const avgReliability = reliabilityScores.length > 0
+    ? RELIABILITY_CODES[Math.round(reliabilityScores.reduce((a, b) => a + b, 0) / reliabilityScores.length) - 1]
+    : null;
+  const avgCredibility = credibilityScores.length > 0
+    ? Math.round(credibilityScores.reduce((a, b) => a + b, 0) / credibilityScores.length) as CredibilityCode
+    : null;
+
+  return { reliability: avgReliability, credibility: avgCredibility };
+}

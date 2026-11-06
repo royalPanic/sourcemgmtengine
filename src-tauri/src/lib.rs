@@ -5,9 +5,6 @@ mod opentimestamps;
 mod validation;
 
 #[cfg(test)]
-mod scope_tests;
-
-#[cfg(test)]
 mod patch_tests;
 
 #[cfg(test)]
@@ -28,7 +25,7 @@ mod migration_tests;
 #[cfg(test)]
 mod download_tests;
 
-use commands::{cases, files, meta_sources, sources};
+use commands::{cases, entities, files, meta_sources, sources};
 use database::connection::init_sql_plugin;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -57,6 +54,19 @@ pub fn run() {
             meta_sources::get_meta_sources,
             meta_sources::update_meta_source,
             meta_sources::delete_meta_source,
+            entities::get_entity_types,
+            entities::create_entity,
+            entities::get_entities,
+            entities::get_entity,
+            entities::update_entity,
+            entities::delete_entity,
+            entities::create_entity_quality,
+            entities::get_entity_qualities,
+            entities::update_entity_quality,
+            entities::delete_entity_quality,
+            entities::add_quality_source_ref,
+            entities::remove_quality_source_ref,
+            entities::get_quality_source_refs,
             files::save_attachment,
             files::import_attachment,
             files::download_media,

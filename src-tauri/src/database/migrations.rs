@@ -178,5 +178,69 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "add_entities_and_qualities",
+            sql: r#"
+                -- Entities are typed, reusable objects (people, organizations,
+                -- vehicles, nations, governments, etc.) that sit between
+                -- cases/events and sources. They can be global (available to
+                -- every container) or tied to a single case or event.
+                CREATE TABLE IF NOT EXISTS entities (
+                    id TEXT PRIMARY KEY,
+                    entity_type TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    case_id TEXT,
+                    is_global INTEGER NOT NULL DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+                );
+
+                -- Qualities are user-defined attributes on an entity. Each
+                -- quality has a name, a data type, and a typed value. A
+                -- quality may reference one or more sources as provenance,
+                -- and displays the referenced sources' Admiralty ratings.
+                CREATE TABLE IF NOT EXISTS entity_qualities (
+                    id TEXT PRIMARY KEY,
+                    entity_id TEXT NOT NULL,
+                    quality_name TEXT NOT NULL,
+                    quality_type TEXT NOT NULL
+                        CHECK (quality_type IN ('string','boolean','integer','date','coordinates','address')),
+                    value_string TEXT,
+                    value_integer INTEGER,
+                    value_boolean INTEGER,
+                    value_date TEXT,
+                    value_coordinates TEXT,
+                    value_address TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+                );
+
+                -- Many-to-many link between qualities and sources as provenance.
+                -- Each link carries the Admiralty rating the source had at the
+                -- time it was cited, so the quality can show an average.
+                CREATE TABLE IF NOT EXISTS quality_source_refs (
+                    id TEXT PRIMARY KEY,
+                    quality_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
+                    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (quality_id) REFERENCES entity_qualities(id) ON DELETE CASCADE,
+                    FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_entities_case_id ON entities(case_id);
+                CREATE INDEX IF NOT EXISTS idx_entities_is_global ON entities(is_global);
+                CREATE INDEX IF NOT EXISTS idx_entities_entity_type ON entities(entity_type);
+                CREATE INDEX IF NOT EXISTS idx_entity_qualities_entity_id ON entity_qualities(entity_id);
+                CREATE INDEX IF NOT EXISTS idx_quality_source_refs_quality_id ON quality_source_refs(quality_id);
+                CREATE INDEX IF NOT EXISTS idx_quality_source_refs_source_id ON quality_source_refs(source_id);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

@@ -1,0 +1,17 @@
+{
+  "id": "organization",
+  "name": "Organization",
+  "description": "A company, NGO, or other organized group.",
+  "default_qualities": [
+    {
+      "name": "Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "Founded Date",
+      "type": "date",
+      "required": false
+    }
+  ]
+}

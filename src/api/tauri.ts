@@ -1,5 +1,6 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, TimestampRecord, ContainerKind, Stance, MetaSource, MetaSourceKind, MetaSourceSummary } from '../types';
+import type { Entity, EntityQuality, EntityQualityWithRefs, EntityType, QualitySourceRef, QualityType, ReliabilityCode, CredibilityCode } from '../types';
 
 // Tauri v2 maps Rust snake_case command parameters to camelCase on the JS side,
 // so every argument below must be camelCase.
@@ -176,6 +177,118 @@ export const metaSourcesApi = {
 
   delete: (id: string) =>
     invoke<void>('delete_meta_source', { id }),
+};
+
+export const entitiesApi = {
+  getAll: () =>
+    invoke<EntityType[]>('get_entity_types'),
+
+  createEntity: (params: {
+    entityType: string;
+    name: string;
+    description?: string;
+    caseId?: string;
+    isGlobal: boolean;
+  }) => invoke<Entity>('create_entity', {
+    entityType: params.entityType,
+    name: params.name,
+    description: params.description,
+    caseId: params.caseId,
+    isGlobal: params.isGlobal,
+  }),
+
+  getEntities: (caseId?: string, isGlobal?: boolean) =>
+    invoke<Entity[]>('get_entities', { caseId, isGlobal }),
+
+  getEntity: (id: string) =>
+    invoke<Entity | null>('get_entity', { id }),
+
+  updateEntity: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    caseId: string;
+    isGlobal: boolean;
+  }>) => invoke<Entity>('update_entity', {
+    id,
+    name: params.name,
+    description: params.description,
+    caseId: params.caseId,
+    isGlobal: params.isGlobal,
+  }),
+
+  deleteEntity: (id: string) =>
+    invoke<void>('delete_entity', { id }),
+};
+
+export const qualitiesApi = {
+  create: (params: {
+    entityId: string;
+    qualityName: string;
+    qualityType: QualityType;
+    valueString?: string;
+    valueInteger?: number;
+    valueBoolean?: boolean;
+    valueDate?: string;
+    valueCoordinates?: string;
+    valueAddress?: string;
+  }) => invoke<EntityQuality>('create_entity_quality', {
+    entityId: params.entityId,
+    qualityName: params.qualityName,
+    qualityType: params.qualityType,
+    valueString: params.valueString,
+    valueInteger: params.valueInteger,
+    valueBoolean: params.valueBoolean,
+    valueDate: params.valueDate,
+    valueCoordinates: params.valueCoordinates,
+    valueAddress: params.valueAddress,
+  }),
+
+  getAll: (entityId: string) =>
+    invoke<EntityQualityWithRefs[]>('get_entity_qualities', { entityId }),
+
+  update: (id: string, params: Partial<{
+    qualityName: string;
+    qualityType: QualityType;
+    valueString: string | null;
+    valueInteger: number | null;
+    valueBoolean: boolean | null;
+    valueDate: string | null;
+    valueCoordinates: string | null;
+    valueAddress: string | null;
+  }>) => invoke<EntityQualityWithRefs>('update_entity_quality', {
+    id,
+    qualityName: params.qualityName,
+    qualityType: params.qualityType,
+    valueString: params.valueString,
+    valueInteger: params.valueInteger,
+    valueBoolean: params.valueBoolean,
+    valueDate: params.valueDate,
+    valueCoordinates: params.valueCoordinates,
+    valueAddress: params.valueAddress,
+  }),
+
+  delete: (id: string) =>
+    invoke<void>('delete_entity_quality', { id }),
+};
+
+export const qualitySourceRefsApi = {
+  add: (params: {
+    qualityId: string;
+    sourceId: string;
+    reliabilityCode?: ReliabilityCode;
+    credibilityCode?: CredibilityCode;
+  }) => invoke<QualitySourceRef>('add_quality_source_ref', {
+    qualityId: params.qualityId,
+    sourceId: params.sourceId,
+    reliabilityCode: params.reliabilityCode,
+    credibilityCode: params.credibilityCode,
+  }),
+
+  remove: (id: string) =>
+    invoke<void>('remove_quality_source_ref', { id }),
+
+  getAll: (qualityId: string) =>
+    invoke<QualitySourceRef[]>('get_quality_source_refs', { qualityId }),
 };
 
 export const filesApi = {

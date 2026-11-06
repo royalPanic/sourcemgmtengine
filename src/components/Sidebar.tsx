@@ -7,8 +7,11 @@ interface SidebarProps {
   selectedCaseId: string | null;
   /** True when the global meta source manager is showing instead of a container. */
   metaSourcesActive: boolean;
+  /** True when the entities panel is showing instead of a container. */
+  entitiesActive: boolean;
   onSelectCase: (caseId: string) => void;
   onOpenMetaSources: () => void;
+  onOpenEntities: () => void;
   onCreateCase: () => void;
   onCreateEvent: () => void;
   onDeleteCase: (caseId: string) => void;
@@ -19,8 +22,10 @@ export function Sidebar({
   loading,
   selectedCaseId,
   metaSourcesActive,
+  entitiesActive,
   onSelectCase,
   onOpenMetaSources,
+  onOpenEntities,
   onCreateCase,
   onCreateEvent,
   onDeleteCase,
@@ -131,6 +136,16 @@ export function Sidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" />
           </svg>
           Meta Sources
+        </button>
+        <button
+          onClick={onOpenEntities}
+          className={`w-full justify-start ${entitiesActive ? 'btn-primary' : 'btn-secondary'}`}
+          title="Manage entities — typed objects with qualities and source provenance"
+        >
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+          Entities
         </button>
         <button onClick={onCreateCase} className="btn-primary w-full">
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

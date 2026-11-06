@@ -239,4 +239,69 @@ mod tests {
             "the citation keeps the rating it inherited"
         );
     }
+
+    #[tokio::test]
+    async fn the_v6_migration_creates_entity_tables() {
+        let pool = fresh_pool().await;
+        apply_all(&pool).await;
+
+        for table in ["entities", "entity_qualities", "quality_source_refs"] {
+            let found: Option<String> =
+                sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+                    .bind(table)
+                    .fetch_optional(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(found.as_deref(), Some(table), "missing table {table}");
+        }
+
+        // Verify the quality_type CHECK constraint.
+        assert!(sqlx::query(
+            "INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) \
+             VALUES ('q1', 'e1', 'Test', 'invalid_type', 'x')",
+        )
+        .execute(&pool)
+        .await
+        .is_err(), "invalid quality type must be rejected");
+
+        // Verify quality_source_refs foreign keys cascade.
+        sqlx::query("INSERT INTO cases (id, title, kind) VALUES ('c1', 'Case', 'case')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO entities (id, entity_type, name, case_id, is_global) VALUES ('e1', 'person', 'Test Person', 'c1', 0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'e1', 'Name', 'string', 'Test')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sources (id, case_id, title) VALUES ('s1', 'c1', 'Source')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO quality_source_refs (id, quality_id, source_id) VALUES ('r1', 'q1', 's1')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Deleting the entity should cascade-delete its qualities and source refs.
+        sqlx::query("DELETE FROM entities WHERE id = 'e1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let quality_count: Option<i64> = sqlx::query_scalar("SELECT COUNT(*) FROM entity_qualities WHERE entity_id = 'e1'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert_eq!(quality_count, Some(0), "qualities should cascade on entity delete");
+
+        let ref_count: Option<i64> = sqlx::query_scalar("SELECT COUNT(*) FROM quality_source_refs WHERE quality_id = 'q1'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ref_count, Some(0), "source refs should cascade on quality delete");
+    }
 }

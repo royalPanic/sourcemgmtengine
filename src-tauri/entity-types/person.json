@@ -1,0 +1,17 @@
+{
+  "id": "person",
+  "name": "Person",
+  "description": "An individual person — a witness, subject, official, or contact.",
+  "default_qualities": [
+    {
+      "name": "Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "Date of Birth",
+      "type": "date",
+      "required": false
+    }
+  ]
+}
