@@ -30,6 +30,9 @@ function App() {
     openAttachment,
     getAttachmentUrl,
     downloadMedia,
+    timestampAttachment,
+    verifyTimestamp,
+    getTimestampStatus,
     reloadQuietly: reloadSources,
   } = useSources(selectedCaseId);
 
@@ -156,6 +159,9 @@ function App() {
         onOpenAttachment={openAttachment}
         resolveAttachmentUrl={getAttachmentUrl}
         downloadMedia={downloadMedia}
+        timestampAttachment={timestampAttachment}
+        verifyTimestamp={verifyTimestamp}
+        getTimestampStatus={getTimestampStatus}
       />
       {newContainerKind && (
         <NewContainerModal

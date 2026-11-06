@@ -1,5 +1,5 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, ContainerKind, Stance, MetaSource, MetaSourceKind, MetaSourceSummary } from '../types';
+import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, TimestampRecord, ContainerKind, Stance, MetaSource, MetaSourceKind, MetaSourceSummary } from '../types';
 
 // Tauri v2 maps Rust snake_case command parameters to camelCase on the JS side,
 // so every argument below must be camelCase.
@@ -209,4 +209,15 @@ export const filesApi = {
     const absolute = await invoke<string>('get_attachment_path', { relativePath });
     return convertFileSrc(absolute);
   },
+};
+
+export const timestampApi = {
+  timestampAttachment: (attachmentId: string) =>
+    invoke<TimestampRecord>('timestamp_attachment', { attachmentId }),
+
+  verifyTimestamp: (attachmentId: string) =>
+    invoke<TimestampRecord>('verify_timestamp', { attachmentId }),
+
+  getTimestampStatus: (attachmentId: string) =>
+    invoke<TimestampRecord | null>('get_timestamp_status', { attachmentId }),
 };

@@ -153,5 +153,30 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add_opentimestamps_records",
+            sql: r#"
+                -- OpenTimestamps chronological proofs for evidence attachments.
+                -- Each attachment can have one timestamp proof (.ots file) stored
+                -- alongside it, with a status tracking Bitcoin confirmation.
+                CREATE TABLE IF NOT EXISTS source_timestamp (
+                    id TEXT PRIMARY KEY,
+                    source_attachment_id TEXT NOT NULL UNIQUE,
+                    ots_path TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','confirmed','failed')),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    confirmed_at DATETIME,
+                    FOREIGN KEY (source_attachment_id) REFERENCES source_attachments(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_source_timestamp_attachment
+                    ON source_timestamp(source_attachment_id);
+                CREATE INDEX IF NOT EXISTS idx_source_timestamp_status
+                    ON source_timestamp(status);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

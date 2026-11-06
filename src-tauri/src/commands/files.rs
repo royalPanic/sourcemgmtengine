@@ -5,7 +5,12 @@ use std::process::Command;
 use uuid::Uuid;
 
 use crate::database::pool;
-use crate::models::models::SourceAttachment;
+use crate::models::models::{SourceAttachment, TimestampRecord, TimestampStatus};
+use crate::opentimestamps::{
+    confirm_timestamp, create_timestamp_proof, fail_timestamp, get_timestamp_for_attachment,
+    record_timestamp,
+};
+use sqlx::Row;
 
 /// Upper bound for a single attachment. Media files are read fully into memory
 /// before being written, so this keeps a stray multi-gigabyte pick from
@@ -394,5 +399,146 @@ pub async fn download_media(
     .await
     .map_err(|e| format!("Failed to record attachment: {}", e))?;
 
+    // Automatically create an OpenTimestamps timestamp proof for the
+    // downloaded attachment so its existence is cryptographically attested
+    // without requiring manual user action. Timestamping failures are
+    // non-fatal — the attachment is still preserved.
+    let attachment_path = match resolve_attachment_path(&app, &attachment.relative_path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Failed to resolve attachment path for auto-timestamp: {e}");
+            return Ok(attachment);
+        }
+    };
+
+    if attachment_path.exists() {
+        match create_timestamp_proof(&attachment_path) {
+            Ok(proof) => {
+                if let Err(e) = record_timestamp(&app, &attachment.id, &attachment.relative_path, &proof).await {
+                    eprintln!("Failed to record auto-timestamp: {e}");
+                }
+            }
+            Err(e) => {
+                eprintln!("Auto-timestamp proof creation failed: {e}");
+            }
+        }
+    }
+
     Ok(attachment)
+}
+
+/// Creates an OpenTimestamps timestamp proof for an attachment and stores it
+/// alongside the attachment. Network is only used when this command is
+/// invoked — the operator must explicitly click "Timestamp".
+#[command]
+pub async fn timestamp_attachment(
+    app: AppHandle,
+    attachment_id: String,
+) -> Result<TimestampRecord, String> {
+    let pool = pool::pool(&app).await?;
+
+    // Verify the attachment exists and get its relative path.
+    let row = sqlx::query(
+        "SELECT relative_path FROM source_attachments WHERE id = ?",
+    )
+    .bind(&attachment_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("Failed to look up attachment: {e}"))?;
+
+    let relative_path: String = row
+        .map(|r| r.get("relative_path"))
+        .ok_or_else(|| format!("Attachment not found: {attachment_id}"))?;
+
+    // Check if a timestamp already exists for this attachment.
+    let existing = get_timestamp_for_attachment(&app, &attachment_id).await?;
+    if existing.is_some() {
+        return Err("Attachment already has a timestamp".to_string());
+    }
+
+    // Resolve the attachment's absolute path.
+    let attachment_path = crate::opentimestamps::resolve_attachment_path(&app, &relative_path)?;
+
+    if !attachment_path.exists() {
+        return Err("Attachment file not found on disk".to_string());
+    }
+
+    // Create the timestamp proof (hashes file, submits to calendars).
+    let proof = create_timestamp_proof(&attachment_path)?;
+
+    // Record and write the .ots proof.
+    record_timestamp(&app, &attachment_id, &relative_path, &proof).await
+}
+
+/// Verifies an existing timestamp proof by re-checking it against the
+/// calendars. Updates the status in the database.
+#[command]
+pub async fn verify_timestamp(app: AppHandle, attachment_id: String) -> Result<TimestampRecord, String> {
+    let pool = pool::pool(&app).await?;
+    let mut record = get_timestamp_for_attachment(&app, &attachment_id)
+        .await?
+        .ok_or_else(|| format!("No timestamp found for attachment: {attachment_id}"))?;
+
+    let app_config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
+
+    let ots_absolute = app_config_dir.join(Path::new(&record.ots_path));
+
+    if !ots_absolute.exists() {
+        return Err("Timestamp proof file not found on disk".to_string());
+    }
+
+    // Re-derive the original attachment hash from the attachment file.
+    let attachment_row = sqlx::query(
+        "SELECT relative_path FROM source_attachments WHERE id = ?",
+    )
+    .bind(&attachment_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("Failed to look up attachment: {e}"))?;
+
+    let rel: String = attachment_row
+        .map(|r| r.get("relative_path"))
+        .ok_or_else(|| format!("Attachment not found: {attachment_id}"))?;
+
+    let att_path = crate::opentimestamps::resolve_attachment_path(&app, &rel)?;
+    let file_hash = crate::opentimestamps::compute_sha256(&att_path)?;
+
+    let mut any_success = false;
+    let mut errors = Vec::new();
+
+    for calendar in crate::opentimestamps::CALENDARS {
+        match crate::opentimestamps::submit_to_calendar(calendar, &file_hash) {
+            Ok(_attestation) => {
+                any_success = true;
+            }
+            Err(e) => {
+                errors.push(format!("{calendar}: {e}"));
+            }
+        }
+    }
+
+    if any_success {
+        record.status = TimestampStatus::Confirmed;
+        let now = chrono::Utc::now().to_rfc3339();
+        record.confirmed_at = Some(now.clone());
+
+        confirm_timestamp(&app, &record.id).await?;
+    } else if !errors.is_empty() {
+        record.status = TimestampStatus::Failed;
+        fail_timestamp(&app, &record.id).await?;
+    }
+
+    Ok(record)
+}
+
+/// Gets the timestamp record for an attachment, if any.
+#[command]
+pub async fn get_timestamp_status(
+    app: AppHandle,
+    attachment_id: String,
+) -> Result<Option<TimestampRecord>, String> {
+    get_timestamp_for_attachment(&app, &attachment_id).await
 }

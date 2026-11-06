@@ -344,3 +344,41 @@ impl SourceAttachment {
         }
     }
 }
+
+/// Status of an OpenTimestamps timestamp proof.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TimestampStatus {
+    Pending,
+    Confirmed,
+    Failed,
+}
+
+impl TimestampStatus {
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "confirmed" => TimestampStatus::Confirmed,
+            "failed" => TimestampStatus::Failed,
+            _ => TimestampStatus::Pending,
+        }
+    }
+
+    pub fn as_db(&self) -> &'static str {
+        match self {
+            TimestampStatus::Pending => "pending",
+            TimestampStatus::Confirmed => "confirmed",
+            TimestampStatus::Failed => "failed",
+        }
+    }
+}
+
+/// A recorded OpenTimestamps timestamp proof for an attachment.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TimestampRecord {
+    pub id: String,
+    pub source_attachment_id: String,
+    pub ots_path: String,
+    pub status: TimestampStatus,
+    pub created_at: String,
+    pub confirmed_at: Option<String>,
+}

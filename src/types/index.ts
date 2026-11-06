@@ -113,6 +113,19 @@ export interface ImportedAttachment {
   file_size: number;
 }
 
+/** Status of an OpenTimestamps timestamp proof. */
+export type TimestampStatus = 'pending' | 'confirmed' | 'failed';
+
+/** A recorded OpenTimestamps timestamp proof for an attachment. */
+export interface TimestampRecord {
+  id: string;
+  source_attachment_id: string;
+  ots_path: string;
+  status: TimestampStatus;
+  created_at: string;
+  confirmed_at: string | null;
+}
+
 export type MediaKind = 'image' | 'video' | 'audio' | 'other';
 
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tif', 'tiff'];

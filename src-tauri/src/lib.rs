@@ -1,6 +1,7 @@
 mod commands;
 mod database;
 mod models;
+mod opentimestamps;
 mod validation;
 
 #[cfg(test)]
@@ -59,6 +60,9 @@ pub fn run() {
             files::save_attachment,
             files::import_attachment,
             files::download_media,
+            files::timestamp_attachment,
+            files::verify_timestamp,
+            files::get_timestamp_status,
             files::read_attachment,
             files::delete_attachment_file,
             files::open_attachment,
