@@ -71,6 +71,7 @@ export function useEntityQualities(entityId: string | null) {
   const loadQualities = useCallback(async () => {
     if (!entityId) {
       setQualities([]);
+      setLoading(false);
       return;
     }
     try {
@@ -163,6 +164,7 @@ export function useQualitySourceRefs(qualityId: string | null) {
   const loadRefs = useCallback(async () => {
     if (!qualityId) {
       setRefs([]);
+      setLoading(false);
       return;
     }
     try {
