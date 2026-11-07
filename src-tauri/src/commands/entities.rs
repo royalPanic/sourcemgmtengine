@@ -150,30 +150,15 @@ fn validate_quality_type(quality_type: &str) -> Result<(), String> {
     }
 }
 
-/// Loads all entity type templates from the `entity-types` directory next to
-/// the binary.
+/// Loads all entity type templates embedded at compile time by build.rs.
 fn load_entity_types() -> Result<Vec<EntityType>, String> {
+    use crate::entity_types::all_entity_type_jsons;
+
     let mut types = Vec::new();
-
-    // Look for entity-types/ next to the executable (dev: src-tauri/entity-types/;
-    // bundled: alongside the binary).
-    let dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
-        .join("entity-types");
-
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| format!("Failed to read entity type template {}: {}", path.display(), e))?;
-                let parsed: EntityType = serde_json::from_str(&content)
-                    .map_err(|e| format!("Failed to parse entity type template {}: {}", path.display(), e))?;
-                types.push(parsed);
-            }
-        }
+    for content in all_entity_type_jsons() {
+        let parsed: EntityType = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse entity type template: {}", e))?;
+        types.push(parsed);
     }
 
     types.sort_by(|a, b| a.name.cmp(&b.name));

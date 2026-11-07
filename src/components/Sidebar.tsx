@@ -14,7 +14,8 @@ interface SidebarProps {
   onOpenEntities: () => void;
   onCreateCase: () => void;
   onCreateEvent: () => void;
-  onDeleteCase: (caseId: string) => void;
+  /** Deletes the case/event. The Sidebar handles user confirmation before calling this. */
+  onDeleteCase: (caseId: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -31,6 +32,8 @@ export function Sidebar({
   onDeleteCase,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  /** The case pending deletion confirmation, plus its title for the prompt. */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string; kind: string } | null>(null);
 
   const filteredCases = cases.filter(c =>
     c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -39,6 +42,16 @@ export function Sidebar({
 
   const plainCases = filteredCases.filter(c => c.kind === 'case');
   const events = filteredCases.filter(c => c.kind === 'event');
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    setPendingDelete(null);
+    await onDeleteCase(pendingDelete.id);
+  };
+
+  const handleCancelDelete = () => {
+    setPendingDelete(null);
+  };
 
   return (
     <aside className="w-64 border-r border-zinc-800 bg-zinc-900/50 flex flex-col h-full">
@@ -95,7 +108,7 @@ export function Sidebar({
                         caseItem={caseItem}
                         isSelected={selectedCaseId === caseItem.id}
                         onSelect={() => onSelectCase(caseItem.id)}
-                        onDelete={() => onDeleteCase(caseItem.id)}
+                        onDelete={() => setPendingDelete({ id: caseItem.id, title: caseItem.title, kind: caseItem.kind })}
                       />
                     </li>
                   ))}
@@ -115,7 +128,7 @@ export function Sidebar({
                         caseItem={caseItem}
                         isSelected={selectedCaseId === caseItem.id}
                         onSelect={() => onSelectCase(caseItem.id)}
-                        onDelete={() => onDeleteCase(caseItem.id)}
+                        onDelete={() => setPendingDelete({ id: caseItem.id, title: caseItem.title, kind: caseItem.kind })}
                       />
                     </li>
                   ))}
@@ -160,6 +173,35 @@ export function Sidebar({
           New Event
         </button>
       </div>
+
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md mx-4 card p-6">
+            <h2 className="text-lg font-semibold mb-1">
+              Delete {pendingDelete.kind === 'event' ? 'Event' : 'Case'}?
+            </h2>
+            <p className="text-sm text-zinc-300 mb-4">
+              Are you sure you want to delete "{pendingDelete.title}"? This will also delete all associated sources and notes.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="btn-ghost text-red-400 hover:bg-red-600/20"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

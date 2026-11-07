@@ -4,6 +4,11 @@ mod models;
 mod opentimestamps;
 mod validation;
 
+// Entity type templates embedded at compile time by build.rs.
+mod entity_types {
+    include!(concat!(env!("OUT_DIR"), "/entity_types.rs"));
+}
+
 #[cfg(test)]
 mod patch_tests;
 

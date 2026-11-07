@@ -99,11 +99,9 @@ function App() {
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    if (window.confirm('Are you sure you want to delete this container? This will also delete all associated sources and notes.')) {
-      await deleteCase(caseId);
-      if (selectedCaseId === caseId) {
-        setSelectedCaseId(null);
-      }
+    await deleteCase(caseId);
+    if (selectedCaseId === caseId) {
+      setSelectedCaseId(null);
     }
   };
 
