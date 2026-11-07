@@ -5,6 +5,8 @@ import { EntityTypeSelector } from './EntityTypeSelector';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
 
 interface EntitiesPanelProps {
+  /** The currently selected case/event, used to scope case-specific entities. */
+  selectedCaseId: string | null;
   entities: Entity[];
   entityTypes: EntityType[];
   loading: boolean;
@@ -55,6 +57,7 @@ interface EntitiesPanelProps {
 }
 
 export function EntitiesPanel({
+  selectedCaseId,
   entities,
   entityTypes,
   loading,
@@ -90,7 +93,7 @@ export function EntitiesPanel({
         entityType: entityType!,
         name: entityName.trim(),
         description: entityDescription.trim() || undefined,
-        caseId: isGlobal ? undefined : undefined,
+        caseId: isGlobal ? undefined : selectedCaseId ?? undefined,
         isGlobal,
       });
       setShowNewEntity(false);

@@ -288,7 +288,6 @@ pub async fn create_entity(
     is_global: bool,
 ) -> Result<Entity, String> {
     let name = validate_name(&name)?;
-    validate_quality_type(&entity_type)?;
 
     // If not global, a case_id is required.
     if !is_global && case_id.is_none() {

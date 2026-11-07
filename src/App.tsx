@@ -241,6 +241,7 @@ function App() {
           />
         ) : view === 'entities' ? (
           <EntitiesPanel
+            selectedCaseId={selectedCaseId}
             entities={entities}
             entityTypes={entityTypes}
             loading={entitiesLoading || entityTypesLoading}
