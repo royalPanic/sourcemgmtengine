@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useEntities, useEntityQualities, useQualitySourceRefs } from './useEntities';
 import { entitiesApi, qualitiesApi, qualitySourceRefsApi } from '../api/tauri';
-import type { Entity, EntityQualityWithRefs, QualitySourceRef, QualityType } from '../types';
+import type { Entity, EntityQualityWithRefs, QualitySourceRef } from '../types';
 
 vi.mock('../api/tauri', () => ({
   entitiesApi: {
@@ -25,7 +25,7 @@ vi.mock('../api/tauri', () => ({
   },
 }));
 
-const mockEntitiesApi = entitiesApi as ReturnType<typeof vi.fn> & {
+const mockEntitiesApi = entitiesApi as unknown as {
   getEntities: ReturnType<typeof vi.fn>;
   createEntity: ReturnType<typeof vi.fn>;
   updateEntity: ReturnType<typeof vi.fn>;
@@ -33,14 +33,14 @@ const mockEntitiesApi = entitiesApi as ReturnType<typeof vi.fn> & {
   getAll: ReturnType<typeof vi.fn>;
 };
 
-const mockQualitiesApi = qualitiesApi as ReturnType<typeof vi.fn> & {
+const mockQualitiesApi = qualitiesApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
 };
 
-const mockQualitySourceRefsApi = qualitySourceRefsApi as ReturnType<typeof vi.fn> & {
+const mockQualitySourceRefsApi = qualitySourceRefsApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   add: ReturnType<typeof vi.fn>;
   remove: ReturnType<typeof vi.fn>;

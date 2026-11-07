@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ReferenceSelect, locksStance, selectionOf, referenceIds, NO_REFERENCE } from './ReferenceSelect';
-import type { SourceWithAttachments, MetaSourceSummary, ReferenceSelection } from '../types';
+import type { SourceWithAttachments, MetaSourceSummary } from '../types';
 
 describe('ReferenceSelect pure functions', () => {
   it('locksStance returns true for source references', () => {
@@ -68,14 +68,13 @@ describe('ReferenceSelect component', () => {
 
   it('renders None option when no siblings or meta sources', () => {
     render(<ReferenceSelect value={NO_REFERENCE} onChange={vi.fn()} siblings={[]} metaSources={[]} />);
-    const select = screen.getByRole('combobox');
-    expect(select).toBeInTheDocument();
+    screen.getByRole('combobox');
     expect(screen.getByText('No other sources or meta sources exist yet.')).toBeInTheDocument();
   });
 
   it('renders sibling sources in optgroup', () => {
     render(<ReferenceSelect value={NO_REFERENCE} onChange={vi.fn()} siblings={[mockSibling]} metaSources={[]} />);
-    const select = screen.getByRole('combobox');
+    screen.getByRole('combobox');
     // optgroup label is not directly queryable by text, check the option instead
     expect(screen.getByText('Sibling Source')).toBeInTheDocument();
   });

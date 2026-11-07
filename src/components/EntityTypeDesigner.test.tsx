@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
-import type { EntityType, EntityTypeQuality } from '../types';
+import type { EntityType } from '../types';
 
 const mockTypes: EntityType[] = [
   { id: 'type-1', name: 'Person', description: null, default_qualities: [] },

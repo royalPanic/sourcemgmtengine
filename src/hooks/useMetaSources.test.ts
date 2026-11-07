@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMetaSources } from './useMetaSources';
 import { metaSourcesApi } from '../api/tauri';
-import type { MetaSource, MetaSourceSummary, MetaSourceKind } from '../types';
+import type { MetaSource, MetaSourceSummary } from '../types';
 
 vi.mock('../api/tauri', () => ({
   metaSourcesApi: {
@@ -13,7 +13,7 @@ vi.mock('../api/tauri', () => ({
   },
 }));
 
-const mockMetaSourcesApi = metaSourcesApi as ReturnType<typeof vi.fn> & {
+const mockMetaSourcesApi = metaSourcesApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;

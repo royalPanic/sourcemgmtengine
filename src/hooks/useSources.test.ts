@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useSources } from './useSources';
 import { sourcesApi, filesApi, timestampApi } from '../api/tauri';
-import type { SourceWithAttachments, SourceType, Stance, SourceCustomMetadata } from '../types';
+import type { SourceWithAttachments } from '../types';
 
 vi.mock('../api/tauri', () => ({
   sourcesApi: {
@@ -29,7 +29,7 @@ vi.mock('../api/tauri', () => ({
   },
 }));
 
-const mockSourcesApi = sourcesApi as ReturnType<typeof vi.fn> & {
+const mockSourcesApi = sourcesApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
   get: ReturnType<typeof vi.fn>;
@@ -39,7 +39,7 @@ const mockSourcesApi = sourcesApi as ReturnType<typeof vi.fn> & {
   deleteAttachment: ReturnType<typeof vi.fn>;
 };
 
-const mockFilesApi = filesApi as ReturnType<typeof vi.fn> & {
+const mockFilesApi = filesApi as unknown as {
   saveAttachment: ReturnType<typeof vi.fn>;
   deleteAttachmentFile: ReturnType<typeof vi.fn>;
   importAttachment: ReturnType<typeof vi.fn>;
@@ -48,7 +48,7 @@ const mockFilesApi = filesApi as ReturnType<typeof vi.fn> & {
   assetUrl: ReturnType<typeof vi.fn>;
 };
 
-const mockTimestampApi = timestampApi as ReturnType<typeof vi.fn> & {
+const mockTimestampApi = timestampApi as unknown as {
   timestampAttachment: ReturnType<typeof vi.fn>;
   verifyTimestamp: ReturnType<typeof vi.fn>;
   getTimestampStatus: ReturnType<typeof vi.fn>;

@@ -10,7 +10,7 @@ vi.mock('../api/tauri', () => ({
   },
 }));
 
-const mockEntitiesApi = entitiesApi as ReturnType<typeof vi.fn> & {
+const mockEntitiesApi = entitiesApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
 };
 

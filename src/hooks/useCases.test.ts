@@ -15,7 +15,7 @@ vi.mock('../api/tauri', () => ({
   },
 }));
 
-const mockCasesApi = casesApi as ReturnType<typeof vi.fn> & {
+const mockCasesApi = casesApi as unknown as {
   getAll: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
