@@ -82,6 +82,7 @@ function App() {
     const created = await createCase(params);
     setSelectedCaseId(created.id);
     setShowEntities(false);
+    setShowNewContainer(false);
   };
 
   const handleDeleteCase = async (caseId: string) => {
@@ -110,7 +111,8 @@ function App() {
     caseId: string;
     isGlobal: boolean;
   }>) => {
-    await updateEntity(id, params);
+    const updated = await updateEntity(id, params);
+    setSelectedEntity(updated);
   };
 
   const handleDeleteEntity = async (id: string) => {
@@ -142,6 +144,7 @@ function App() {
       valueCoordinates: params.valueCoordinates ?? undefined,
       valueAddress: params.valueAddress ?? undefined,
     });
+    await reloadQualities();
   };
 
   const handleUpdateQuality = async (id: string, params: Partial<{
@@ -164,10 +167,12 @@ function App() {
       valueCoordinates: params.valueCoordinates ?? undefined,
       valueAddress: params.valueAddress ?? undefined,
     });
+    await reloadQualities();
   };
 
   const handleDeleteQuality = async (id: string) => {
     await qualitiesApi.delete(id);
+    await reloadQualities();
   };
 
   const handleAddQualitySourceRef = async (params: {

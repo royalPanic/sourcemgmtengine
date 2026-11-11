@@ -1,5 +1,9 @@
 import { useState } from 'react';
 import type { EntityQualityWithRefs, QualitySourceRef, QualityType } from '../types';
+import {
+  RELIABILITY_CODES,
+  RELIABILITY_DEFINITIONS,
+} from '../types';
 
 interface EntityQualityEditorProps {
   quality: EntityQualityWithRefs | null;
@@ -42,15 +46,20 @@ export function EntityQualityEditor({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reliability qualities are always named "Reliability" — the name is locked
+  // because it drives the entity reliability propagation feature.
+  const isReliabilityQuality = qualityType === 'reliability';
+  const lockedQualityName = isReliabilityQuality ? 'Reliability' : qualityName;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
       await onSave({
-        qualityName: qualityName.trim(),
+        qualityName: isReliabilityQuality ? 'Reliability' : qualityName.trim(),
         qualityType,
-        valueString: qualityType === 'string' ? qualityStringValue() : null,
+        valueString: qualityType === 'string' || qualityType === 'reliability' ? qualityStringValue() : null,
         valueInteger: qualityType === 'integer' ? (valueInteger ? Number(valueInteger) : null) : null,
         valueBoolean: qualityType === 'boolean' ? valueBoolean : null,
         valueDate: qualityType === 'date' ? valueDate || null : null,
@@ -114,13 +123,20 @@ export function EntityQualityEditor({
             <label className="block text-sm font-medium mb-1">Quality Name *</label>
             <input
               type="text"
-              value={qualityName}
+              value={lockedQualityName}
               onChange={(e) => setQualityName(e.target.value)}
               className="input"
               placeholder="e.g. Name, Date of Birth, Nationality"
               autoFocus
               required
+              readOnly={isReliabilityQuality}
             />
+            {isReliabilityQuality && (
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Reliability qualities are always named "Reliability" — the name
+                is locked because it drives entity reliability propagation.
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
@@ -191,6 +207,20 @@ export function EntityQualityEditor({
                 className="input"
                 placeholder="Enter an address"
               />
+            )}
+            {qualityType === 'reliability' && (
+              <select
+                value={valueString}
+                onChange={(e) => setValueString(e.target.value)}
+                className="select"
+              >
+                <option value="">Not rated</option>
+                {RELIABILITY_CODES.map(code => (
+                  <option key={code} value={code} title={RELIABILITY_DEFINITIONS[code].description}>
+                    {RELIABILITY_DEFINITIONS[code].label}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
@@ -299,6 +329,7 @@ const QUALITY_TYPE_OPTIONS: { value: QualityType; label: string }[] = [
   { value: 'date', label: 'Date' },
   { value: 'coordinates', label: 'Coordinates' },
   { value: 'address', label: 'Address' },
+  { value: 'reliability', label: 'Reliability (A–F)' },
 ];
 
 function computeAverage(refs: QualitySourceRef[]): {

@@ -547,6 +547,21 @@ pub async fn create_entity_quality(
         return Err("Entity not found".to_string());
     }
 
+    // An entity may have at most one reliability quality — it drives source
+    // reliability propagation, so multiple would be ambiguous.
+    if quality_type == "reliability" {
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability'",
+        )
+        .bind(&entity_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to check for existing reliability quality: {}", e))?;
+        if existing.is_some() {
+            return Err("Entity already has a reliability quality".to_string());
+        }
+    }
+
     let now = Utc::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
 
@@ -651,6 +666,21 @@ pub async fn update_entity_quality(
     if next_type == "reliability" {
         if let Some(Some(val)) = &value_string {
             validate_reliability_quality_value(val)?;
+        }
+
+        // An entity may have at most one reliability quality — it drives
+        // source reliability propagation, so multiple would be ambiguous.
+        // Exclude this quality itself from the check.
+        let existing: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability' AND id != ?",
+        )
+        .bind(&existing.entity_id)
+        .bind(&existing.id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to check for existing reliability quality: {}", e))?;
+        if existing.is_some() {
+            return Err("Entity already has a reliability quality".to_string());
         }
     }
 

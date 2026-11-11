@@ -18,7 +18,6 @@ describe('EntityTypeDesigner', () => {
 
   it('renders type list view', () => {
     render(<EntityTypeDesigner types={mockTypes} onClose={vi.fn()} />);
-    expect(screen.getByText(/Manage Entity Types/)).toBeInTheDocument();
     expect(screen.getByText('Person')).toBeInTheDocument();
     expect(screen.getByText(/New Type/)).toBeInTheDocument();
   });
@@ -51,7 +50,7 @@ describe('EntityTypeDesigner', () => {
     const cancelButtons = screen.getAllByRole('button', { name: /Cancel/ });
     fireEvent.click(cancelButtons[cancelButtons.length - 1]);
     // Should be back in list view
-    expect(screen.getByText(/Manage Entity Types/)).toBeInTheDocument();
+    expect(screen.getByText('Person')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/e\.g\. person, organization, vehicle/)).not.toBeInTheDocument();
   });
 

@@ -285,5 +285,42 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "add_reliability_quality_type",
+            sql: r#"
+                -- Allow 'reliability' as a quality type so an entity can
+                -- expose an Admiralty rating that propagates to citing sources.
+                -- SQLite cannot alter a CHECK constraint in place, so the
+                -- entity_qualities table is recreated with the expanded
+                -- constraint; existing rows keep their current values.
+                CREATE TABLE IF NOT EXISTS entity_qualities_new (
+                    id TEXT PRIMARY KEY,
+                    entity_id TEXT NOT NULL,
+                    quality_name TEXT NOT NULL,
+                    quality_type TEXT NOT NULL
+                        CHECK (quality_type IN ('string','boolean','integer','date','coordinates','address','reliability')),
+                    value_string TEXT,
+                    value_integer INTEGER,
+                    value_boolean INTEGER,
+                    value_date TEXT,
+                    value_coordinates TEXT,
+                    value_address TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+                );
+                INSERT INTO entity_qualities_new
+                    SELECT id, entity_id, quality_name, quality_type, value_string,
+                           value_integer, value_boolean, value_date, value_coordinates,
+                           value_address, created_at, updated_at
+                    FROM entity_qualities;
+                DROP TABLE entity_qualities;
+                ALTER TABLE entity_qualities_new RENAME TO entity_qualities;
+                CREATE INDEX IF NOT EXISTS idx_entity_qualities_entity_id
+                    ON entity_qualities(entity_id);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

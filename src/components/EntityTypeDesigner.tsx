@@ -99,20 +99,6 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
   if (mode === 'list') {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-zinc-800">
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-ghost p-1.5 text-zinc-400 hover:text-zinc-200"
-            title="Back to entities"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h2 className="text-sm font-medium text-zinc-300">Manage Entity Types</h2>
-        </div>
-
         <div className="flex-1 overflow-y-auto p-4">
           <div className="flex items-center justify-between mb-4">
             <p className="text-[11px] text-zinc-500">
@@ -263,7 +249,7 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
                 onChange={(e) => setNewQualityType(e.target.value as QualityType)}
                 className="select text-xs"
               >
-                {['string', 'boolean', 'integer', 'date', 'coordinates', 'address'].map(t => (
+                {['string', 'boolean', 'integer', 'date', 'coordinates', 'address', 'reliability'].map(t => (
                   <option key={t} value={t}>{QUALITY_TYPE_LABELS[t as QualityType]}</option>
                 ))}
               </select>
