@@ -6,7 +6,7 @@ import {
   formatAverage,
   scoreToBarPercent,
   isReferenceLinked,
-  isMetaReferenced,
+  isEntityReferenced,
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -28,7 +28,7 @@ function source(
     credibility_code: credibility,
     stance,
     reference_source_id: null,
-    reference_meta_source_id: null,
+    reference_entity_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',
@@ -214,8 +214,8 @@ describe('reference-linked sources', () => {
     // are two independent pieces of evidence, not one duplicated.
     const sources = [
       source('supports', 'A', 1),
-      citing({ reference_meta_source_id: 'meta-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
-      citing({ reference_meta_source_id: 'meta-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_entity_id: 'entity-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_entity_id: 'entity-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
     ];
 
     const result = computeEventAnalytics(sources, opts);
@@ -235,11 +235,11 @@ describe('reference-linked sources', () => {
   it('are detected by either reference column', () => {
     expect(isReferenceLinked(source(null, null, null))).toBe(false);
     expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
-    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(false);
+    expect(isReferenceLinked(citing({ reference_entity_id: 'b' }))).toBe(false);
 
-    expect(isMetaReferenced(source(null, null, null))).toBe(false);
-    expect(isMetaReferenced(citing({ reference_meta_source_id: 'b' }))).toBe(true);
-    expect(isMetaReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
+    expect(isEntityReferenced(source(null, null, null))).toBe(false);
+        expect(isEntityReferenced(citing({ reference_entity_id: 'b' }))).toBe(true);
+        expect(isEntityReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
   });
 });
 

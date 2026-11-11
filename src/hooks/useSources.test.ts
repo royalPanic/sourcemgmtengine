@@ -65,7 +65,7 @@ const mockSource: SourceWithAttachments = {
   credibility_code: 1,
   stance: 'supports',
   reference_source_id: null,
-  reference_meta_source_id: null,
+  reference_entity_id: null,
   source_date: null,
   source_time: null,
   custom_metadata: '{}',

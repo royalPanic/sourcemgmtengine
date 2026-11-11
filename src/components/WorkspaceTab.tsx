@@ -4,23 +4,18 @@ import type {
   SourceType,
   SourceCustomMetadata,
   Stance,
-  MetaSourceSummary,
   Entity,
   EntityType,
-  MetaSourceKind,
 } from '../types';
 import { SourcesGrid } from './SourcesGrid';
-import { MetaSourcesPanel } from './MetaSourcesPanel';
 import { EntitiesPanel } from './EntitiesPanel';
 
-type WorkspaceTab = 'sources' | 'metaSources' | 'entities';
+type WorkspaceTab = 'sources' | 'entities';
 
 interface WorkspaceTabProps {
   caseId: string | null;
   sources: SourceWithAttachments[];
   sourcesLoading: boolean;
-  metaSources: MetaSourceSummary[];
-  metaSourcesLoading: boolean;
   entities: Entity[];
   entitiesLoading: boolean;
   entityTypes: EntityType[];
@@ -33,7 +28,7 @@ interface WorkspaceTabProps {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -47,7 +42,7 @@ interface WorkspaceTabProps {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -57,23 +52,6 @@ interface WorkspaceTabProps {
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenSourceDetail: (source: SourceWithAttachments) => void;
-  onCreateMetaSource: (params: {
-    name: string;
-    kind?: MetaSourceKind;
-    description?: string;
-    url?: string;
-    reliabilityCode?: string;
-    credibilityCode?: number;
-  }) => Promise<unknown>;
-  onUpdateMetaSource: (id: string, params: Partial<{
-    name: string;
-    kind: MetaSourceKind;
-    description: string;
-    url: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-  }>) => Promise<unknown>;
-  onDeleteMetaSource: (id: string) => Promise<void>;
   onCreateEntity: (params: {
     entityType: string;
     name: string;
@@ -87,7 +65,6 @@ interface WorkspaceTabProps {
 
 const TAB_LABELS: Record<WorkspaceTab, string> = {
   sources: 'Sources',
-  metaSources: 'Meta Sources',
   entities: 'Entities',
 };
 
@@ -95,8 +72,6 @@ export function WorkspaceTab({
   caseId,
   sources,
   sourcesLoading,
-  metaSources,
-  metaSourcesLoading,
   entities,
   entitiesLoading,
   entityTypes,
@@ -107,9 +82,6 @@ export function WorkspaceTab({
   onDeleteAttachment,
   onOpenAttachment,
   onOpenSourceDetail,
-  onCreateMetaSource,
-  onUpdateMetaSource,
-  onDeleteMetaSource,
   onCreateEntity,
   onDeleteEntity,
   onOpenEntityDetail,
@@ -120,7 +92,7 @@ export function WorkspaceTab({
     <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
       <div className="border-b border-zinc-800 bg-zinc-900/50 px-4">
         <div className="flex gap-1 p-2">
-          {(['sources', 'metaSources', 'entities'] as const).map((tab) => (
+          {(['sources', 'entities'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -133,9 +105,7 @@ export function WorkspaceTab({
               {TAB_LABELS[tab]} (
               {tab === 'sources'
                 ? sources.length
-                : tab === 'metaSources'
-                  ? metaSources.length
-                  : entities.length})
+                : entities.length})
             </button>
           ))}
         </div>
@@ -146,7 +116,7 @@ export function WorkspaceTab({
           <SourcesGrid
             sources={sources}
             loading={sourcesLoading}
-            metaSources={metaSources}
+            entities={entities}
             onCreateSource={onCreateSource}
             onUpdateSource={onUpdateSource}
             onDeleteSource={onDeleteSource}
@@ -154,15 +124,6 @@ export function WorkspaceTab({
             onDeleteAttachment={onDeleteAttachment}
             onOpenAttachment={onOpenAttachment}
             onOpenDetail={onOpenSourceDetail}
-          />
-        )}
-        {activeTab === 'metaSources' && (
-          <MetaSourcesPanel
-            metaSources={metaSources}
-            loading={metaSourcesLoading}
-            onCreate={onCreateMetaSource}
-            onUpdate={onUpdateMetaSource}
-            onDelete={onDeleteMetaSource}
           />
         )}
         {activeTab === 'entities' && (

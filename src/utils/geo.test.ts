@@ -35,7 +35,7 @@ function sourceWithMeta(meta: Record<string, unknown>): SourceWithAttachments {
     credibility_code: null,
     stance: null,
     reference_source_id: null,
-    reference_meta_source_id: null,
+    reference_entity_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: JSON.stringify(meta),

@@ -9,11 +9,12 @@ use crate::validation::{
     is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
     validate_reliability_patch,
 };
+use crate::commands::entities::get_entity_reliability;
 use crate::commands::references::{
     propagate_rating, reference_rating, resolve_reference, validate_reference, ReferenceInput,
 };
 
-const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at";
+const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at";
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
@@ -29,7 +30,7 @@ fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
         credibility_code: row.get("credibility_code"),
         stance: stance_str.as_deref().and_then(Stance::from_db),
         reference_source_id: row.get("reference_source_id"),
-        reference_meta_source_id: row.get("reference_meta_source_id"),
+        reference_entity_id: row.get("reference_entity_id"),
         source_date: row.get("source_date"),
         source_time: row.get("source_time"),
         custom_metadata: row.get("custom_metadata"),
@@ -83,7 +84,7 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
     let reference = resolve_reference(
         &pool,
         source.reference_source_id.as_deref(),
-        source.reference_meta_source_id.as_deref(),
+        source.reference_entity_id.as_deref(),
     )
     .await?;
 
@@ -141,7 +142,7 @@ pub async fn create_source(
     credibility_code: Option<i32>,
     stance: Option<Stance>,
     reference_source_id: Option<String>,
-    reference_meta_source_id: Option<String>,
+    reference_entity_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Value,
@@ -161,7 +162,7 @@ pub async fn create_source(
     validate_source_datetime(&source_date, &source_time)?;
 
     let pool = pool::pool(&app).await?;
-    let reference = ReferenceInput::new(reference_source_id, reference_meta_source_id);
+    let reference = ReferenceInput::new(reference_source_id, reference_entity_id.clone());
 
     let mut source = Source::new(
         case_id,
@@ -173,7 +174,7 @@ pub async fn create_source(
         credibility_code,
         stance,
         reference.source_id.clone(),
-        reference.meta_source_id.clone(),
+        reference.entity_id.clone(),
         source_date,
         source_time,
         custom_metadata,
@@ -181,15 +182,23 @@ pub async fn create_source(
 
     // A citing source mirrors its reference's rating. Only a reference to
     // another source also suppresses the stance: that is a duplicate capture of
-    // one piece of evidence, whereas a meta source can express several
-    // viewpoints across different captures.
+    // one piece of evidence, whereas an entity can express several viewpoints
+    // across different captures.
     if reference.is_set() {
         validate_reference(&pool, &source.case_id, &source.id, &reference)
             .await
             .map_err(|e| e.message().to_string())?;
-        let (reliability, credibility) = reference_rating(&pool, &reference).await?;
-        source.reliability_code = reliability;
-        source.credibility_code = credibility;
+
+        // If the reference is an entity, inherit its reliability quality.
+        if let Some(entity_id) = &reference.entity_id {
+            let entity_reliability = get_entity_reliability(&app, entity_id).await?;
+            source.reliability_code = entity_reliability;
+        } else {
+            let (reliability, credibility) = reference_rating(&pool, &reference).await?;
+            source.reliability_code = reliability;
+            source.credibility_code = credibility;
+        }
+
         if reference.locks_stance() {
             source.stance = None;
         }
@@ -200,7 +209,7 @@ pub async fn create_source(
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at)
+        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&source.id)
@@ -213,7 +222,7 @@ pub async fn create_source(
     .bind(source.credibility_code)
     .bind(source.stance.as_ref().map(|s| s.as_db()))
     .bind(&source.reference_source_id)
-    .bind(&source.reference_meta_source_id)
+    .bind(&source.reference_entity_id)
     .bind(&source.source_date)
     .bind(&source.source_time)
     .bind(&source.custom_metadata)
@@ -249,7 +258,7 @@ pub async fn get_sources(
         let reference = resolve_reference(
             &pool,
             source.reference_source_id.as_deref(),
-            source.reference_meta_source_id.as_deref(),
+            source.reference_entity_id.as_deref(),
         )
         .await?;
         sources.push(SourceWithAttachments { source, attachments, reference });
@@ -275,7 +284,7 @@ pub async fn update_source(
     credibility_code: Option<i32>,
     stance: Option<Stance>,
     reference_source_id: Option<String>,
-    reference_meta_source_id: Option<String>,
+    reference_entity_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Option<Value>,
@@ -314,20 +323,19 @@ pub async fn update_source(
     validate_source_datetime(&effective_date, &effective_time)?;
 
     // Reference patch: omitted leaves the stored reference alone, an empty
-    // string clears it, anything else sets it. Switching from a source
-    // reference to a meta reference therefore sends `""` plus the new meta id.
+    // string clears it, anything else sets it.
     let next_reference = ReferenceInput::new(
         match reference_source_id {
             None => existing.source.reference_source_id.clone(),
             Some(value) => non_empty(value),
         },
-        match reference_meta_source_id {
-            None => existing.source.reference_meta_source_id.clone(),
+        match reference_entity_id {
+            None => existing.source.reference_entity_id.clone(),
             Some(value) => non_empty(value),
         },
     );
     let reference_changed = next_reference.source_id != existing.source.reference_source_id
-        || next_reference.meta_source_id != existing.source.reference_meta_source_id;
+        || next_reference.entity_id != existing.source.reference_entity_id;
 
     if next_reference.is_set() {
         validate_reference(&pool, &existing.source.case_id, &id, &next_reference)
@@ -337,16 +345,25 @@ pub async fn update_source(
         // Live sync: the citing source always mirrors its reference. A report
         // of a statement does not change the reliability of the source or the
         // credibility of the information, so any supplied rating is ignored.
-        let (reliability, credibility) = reference_rating(&pool, &next_reference).await?;
-        reliability_code = Some(reliability);
-        credibility_code = Some(credibility);
+        if let Some(entity_id) = &next_reference.entity_id {
+            let entity_reliability = get_entity_reliability(&app, entity_id).await?;
+            reliability_code = Some(entity_reliability);
+            credibility_code = None;
+        } else {
+            let (reliability, credibility) = reference_rating(&pool, &next_reference).await?;
+            reliability_code = Some(reliability);
+            credibility_code = Some(credibility);
+        }
 
-        // Only a reference to another source locks the stance. A meta source
-        // represents an entity that may express several viewpoints, so its
-        // citations stay classifiable and countable.
+        // Only a reference to another source locks the stance. An entity
+        // reference keeps the stance editable.
         if next_reference.locks_stance() {
             stance_patch = Some(None);
         }
+    } else if reference_changed {
+        // Reference was cleared: source can set its own reliability again.
+        // reliability_code and credibility_code keep whatever was patched
+        // (or None if not supplied).
     }
 
     if let Some(Some(stance)) = &stance_patch {
@@ -377,7 +394,7 @@ pub async fn update_source(
     }
     if reference_changed {
         updates.push("reference_source_id = ?");
-        updates.push("reference_meta_source_id = ?");
+        updates.push("reference_entity_id = ?");
     }
     if source_date.is_some() {
         updates.push("source_date = ?");
@@ -425,7 +442,7 @@ pub async fn update_source(
     }
     if reference_changed {
         statement = statement.bind(&next_reference.source_id);
-        statement = statement.bind(&next_reference.meta_source_id);
+        statement = statement.bind(&next_reference.entity_id);
     }
     if let Some(source_date) = source_date {
         statement = statement.bind(source_date);

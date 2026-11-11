@@ -89,7 +89,7 @@ mod tests {
         let pool = fresh_pool().await;
         apply_all(&pool).await;
 
-        for table in ["cases", "case_notes", "sources", "source_attachments", "meta_sources"] {
+        for table in ["cases", "case_notes", "sources", "source_attachments", "entities"] {
             let found: Option<String> =
                 sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
                     .bind(table)
@@ -119,7 +119,7 @@ mod tests {
 
         let row = sqlx::query(
             "SELECT title, reliability_code, credibility_code, stance, \
-             reference_source_id, reference_meta_source_id FROM sources WHERE id = 's1'",
+             reference_source_id, reference_entity_id FROM sources WHERE id = 's1'",
         )
         .fetch_one(&pool)
         .await
@@ -134,7 +134,7 @@ mod tests {
             None,
             "existing rows must default to no reference"
         );
-        assert_eq!(row.get::<Option<String>, _>("reference_meta_source_id"), None);
+        assert_eq!(row.get::<Option<String>, _>("reference_entity_id"), None);
     }
 
     #[tokio::test]
@@ -150,13 +150,13 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO meta_sources (id, name) VALUES ('m1', 'Reuters')")
+        sqlx::query("INSERT INTO entities (id, entity_type, name) VALUES ('m1', 'organization', 'Reuters')")
             .execute(&pool)
             .await
             .unwrap();
 
         let insert_both = sqlx::query(
-            "INSERT INTO sources (id, case_id, title, reference_source_id, reference_meta_source_id) \
+            "INSERT INTO sources (id, case_id, title, reference_source_id, reference_entity_id) \
              VALUES ('bad', 'c1', 'Bad', 's1', 'm1')",
         )
         .execute(&pool)
@@ -169,7 +169,7 @@ mod tests {
             .unwrap();
 
         let update_both = sqlx::query(
-            "UPDATE sources SET reference_source_id = 's1', reference_meta_source_id = 'm1' WHERE id = 's2'",
+            "UPDATE sources SET reference_source_id = 's1', reference_entity_id = 'm1' WHERE id = 's2'",
         )
         .execute(&pool)
         .await;
@@ -177,24 +177,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn meta_source_ratings_are_constrained() {
+    async fn entity_qualities_are_constrained() {
         let pool = fresh_pool().await;
         apply_all(&pool).await;
 
-        sqlx::query("INSERT INTO meta_sources (id, name, reliability_code, credibility_code) VALUES ('ok', 'Reuters', 'A', 1)")
+        sqlx::query("INSERT INTO cases (id, title, kind) VALUES ('c1', 'Case', 'case')")
             .execute(&pool)
             .await
-            .expect("valid rating must be accepted");
+            .unwrap();
+        sqlx::query("INSERT INTO entities (id, entity_type, name, case_id, is_global) VALUES ('e1', 'organization', 'Reuters', 'c1', 0)")
+            .execute(&pool)
+            .await
+            .expect("valid entity must be accepted");
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'e1', 'Reliability', 'string', 'A')")
+            .execute(&pool)
+            .await
+            .expect("valid quality must be accepted");
 
-        assert!(sqlx::query("INSERT INTO meta_sources (id, name, reliability_code) VALUES ('bad1', 'X', 'G')")
-            .execute(&pool)
-            .await
-            .is_err());
-        assert!(sqlx::query("INSERT INTO meta_sources (id, name, credibility_code) VALUES ('bad2', 'X', 7)")
-            .execute(&pool)
-            .await
-            .is_err());
-        assert!(sqlx::query("INSERT INTO meta_sources (id, name, kind) VALUES ('bad3', 'X', 'robot')")
+        assert!(sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('bad1', 'e1', 'Test', 'invalid_type', 'x')")
             .execute(&pool)
             .await
             .is_err());

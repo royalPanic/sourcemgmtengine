@@ -18,7 +18,7 @@ function source(
     credibility_code: 1,
     stance,
     reference_source_id: null,
-    reference_meta_source_id: null,
+    reference_entity_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',
@@ -66,7 +66,7 @@ describe('SourcesGrid', () => {
     const { container } = render(<SourcesGrid
       sources={[]}
       loading={true}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -83,7 +83,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={[]}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -101,7 +101,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -119,7 +119,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -140,7 +140,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -157,7 +157,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -177,7 +177,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={onDeleteSource}
@@ -195,7 +195,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={[]}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -214,7 +214,7 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      metaSources={[]}
+      entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
@@ -230,4 +230,13 @@ describe('SourcesGrid', () => {
     expect(attachmentCell).toBeInTheDocument();
   });
 });
+
+
+
+
+
+
+
+
+
 

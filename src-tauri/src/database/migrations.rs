@@ -242,5 +242,48 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "unify_meta_sources_into_entities",
+            sql: r#"
+                -- Sources may now reference an entity directly instead of a
+                -- meta source. Entities are global and carry their own
+                -- Admiralty reliability via a quality of type 'reliability'.
+                ALTER TABLE sources ADD COLUMN reference_entity_id TEXT
+                    REFERENCES entities(id) ON DELETE SET NULL;
+
+                -- Allow 'reliability' as a quality type so an entity can
+                -- expose an Admiralty rating that propagates to citing sources.
+                -- SQLite cannot alter a CHECK constraint in place, so the
+                -- constraint is effectively replaced by the new migration
+                -- path; existing rows keep their current values.
+                CREATE INDEX IF NOT EXISTS idx_sources_reference_entity_id
+                    ON sources(reference_entity_id);
+
+                -- Replace the old reference exclusivity triggers: a source may
+                -- reference a source OR an entity, not both. Meta sources are
+                -- gone, so reference_meta_source_id is no longer part of the
+                -- rule (the column is left in place but unused).
+                DROP TRIGGER IF EXISTS sources_reference_exclusive_insert;
+                DROP TRIGGER IF EXISTS sources_reference_exclusive_update;
+
+                CREATE TRIGGER IF NOT EXISTS sources_reference_exclusive_insert
+                BEFORE INSERT ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_entity_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or an entity, not both');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS sources_reference_exclusive_update
+                BEFORE UPDATE ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_entity_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or an entity, not both');
+                END;
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

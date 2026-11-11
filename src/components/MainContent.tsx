@@ -3,7 +3,7 @@ import { CaseNotesEditor } from './CaseNotesEditor';
 import { CaseHeader } from './CaseHeader';
 import { WorkspaceTab } from './WorkspaceTab';
 import { useCaseNote } from '../hooks/useCases';
-import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary, Entity, EntityType, MetaSourceKind } from '../types';
+import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity, EntityType } from '../types';
 
 type Tab = 'notes' | 'workspace';
 
@@ -11,8 +11,6 @@ interface MainContentProps {
   container: Case | null;
   sources: SourceWithAttachments[];
   sourcesLoading: boolean;
-  metaSources: MetaSourceSummary[];
-  metaSourcesLoading: boolean;
   entities: Entity[];
   entitiesLoading: boolean;
   entityTypes: EntityType[];
@@ -31,7 +29,7 @@ interface MainContentProps {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -45,7 +43,7 @@ interface MainContentProps {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -55,23 +53,6 @@ interface MainContentProps {
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenSourceDetail: (source: SourceWithAttachments) => void;
-  onCreateMetaSource: (params: {
-    name: string;
-    kind?: MetaSourceKind;
-    description?: string;
-    url?: string;
-    reliabilityCode?: string;
-    credibilityCode?: number;
-  }) => Promise<unknown>;
-  onUpdateMetaSource: (id: string, params: Partial<{
-    name: string;
-    kind: MetaSourceKind;
-    description: string;
-    url: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-  }>) => Promise<unknown>;
-  onDeleteMetaSource: (id: string) => Promise<void>;
   onCreateEntity: (params: {
     entityType: string;
     name: string;
@@ -87,8 +68,6 @@ export function MainContent({
   container,
   sources,
   sourcesLoading,
-  metaSources,
-  metaSourcesLoading,
   entities,
   entitiesLoading,
   entityTypes,
@@ -100,9 +79,6 @@ export function MainContent({
   onDeleteAttachment,
   onOpenAttachment,
   onOpenSourceDetail,
-  onCreateMetaSource,
-  onUpdateMetaSource,
-  onDeleteMetaSource,
   onCreateEntity,
   onDeleteEntity,
   onOpenEntityDetail,
@@ -185,8 +161,6 @@ export function MainContent({
             caseId={caseId}
             sources={sources}
             sourcesLoading={sourcesLoading}
-            metaSources={metaSources}
-            metaSourcesLoading={metaSourcesLoading}
             entities={entities}
             entitiesLoading={entitiesLoading}
             entityTypes={entityTypes}
@@ -197,9 +171,6 @@ export function MainContent({
             onDeleteAttachment={onDeleteAttachment}
             onOpenAttachment={onOpenAttachment}
             onOpenSourceDetail={onOpenSourceDetail}
-            onCreateMetaSource={onCreateMetaSource}
-            onUpdateMetaSource={onUpdateMetaSource}
-            onDeleteMetaSource={onDeleteMetaSource}
             onCreateEntity={onCreateEntity}
             onDeleteEntity={onDeleteEntity}
             onOpenEntityDetail={onOpenEntityDetail}

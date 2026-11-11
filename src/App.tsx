@@ -4,12 +4,10 @@ import { Sidebar } from './components/Sidebar';
 import { MainContent } from './components/MainContent';
 import { DetailDrawer } from './components/DetailDrawer';
 import { NewContainerModal } from './components/NewContainerModal';
-import { MetaSourcesPanel } from './components/MetaSourcesPanel';
 import { EntitiesPanel } from './components/EntitiesPanel';
 import { EntityDetailDrawer } from './components/EntityDetailDrawer';
 import { useCases } from './hooks/useCases';
 import { useSources } from './hooks/useSources';
-import { useMetaSources } from './hooks/useMetaSources';
 import { useEntities } from './hooks/useEntities';
 import { useEntityTypes } from './hooks/useEntityTypes';
 import { useEntityQualities } from './hooks/useEntities';
@@ -20,9 +18,6 @@ function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSource, setDrawerSource] = useState<SourceWithAttachments | null>(null);
-  // The meta source manager replaces the container view rather than opening a
-  // modal, because it is a workspace-level list with its own table.
-  const [showMetaSources, setShowMetaSources] = useState(false);
   // The entities panel replaces the container view.
   const [showEntities, setShowEntities] = useState(false);
   const [showNewContainer, setShowNewContainer] = useState(false);
@@ -42,16 +37,7 @@ function App() {
     timestampAttachment,
     verifyTimestamp,
     getTimestampStatus,
-    reloadQuietly: reloadSources,
   } = useSources(selectedCaseId);
-
-  const {
-    metaSources,
-    loading: metaSourcesLoading,
-    createMetaSource,
-    updateMetaSource,
-    deleteMetaSource,
-  } = useMetaSources();
 
   const {
     entities,
@@ -72,7 +58,6 @@ function App() {
 
   const handleSelectCase = (caseId: string) => {
     setSelectedCaseId(caseId);
-    setShowMetaSources(false);
     setShowEntities(false);
     setDrawerOpen(false);
     setDrawerSource(null);
@@ -96,7 +81,6 @@ function App() {
   }) => {
     const created = await createCase(params);
     setSelectedCaseId(created.id);
-    setShowMetaSources(false);
     setShowEntities(false);
   };
 
@@ -105,19 +89,6 @@ function App() {
     if (selectedCaseId === caseId) {
       setSelectedCaseId(null);
     }
-  };
-
-  // Editing a meta source re-rates every source that cites it, so the open
-  // container needs refreshing too.
-  const handleUpdateMetaSource: typeof updateMetaSource = async (id, params) => {
-    const result = await updateMetaSource(id, params);
-    await reloadSources();
-    return result;
-  };
-
-  const handleDeleteMetaSource = async (id: string) => {
-    await deleteMetaSource(id);
-    await reloadSources();
   };
 
   const handleCreateEntity = async (params: {
@@ -229,7 +200,7 @@ function App() {
     ? sources.filter(s => s.id !== activeDrawerSource.id)
     : [];
 
-  const view = showMetaSources ? 'metaSources' : showEntities ? 'entities' : 'content';
+  const view = showEntities ? 'entities' : 'content';
 
   return (
     <div className="h-screen w-full flex bg-zinc-950">
@@ -237,19 +208,10 @@ function App() {
         cases={cases}
         loading={loading}
         selectedCaseId={selectedCaseId}
-        metaSourcesActive={showMetaSources}
         entitiesActive={showEntities}
         onSelectCase={handleSelectCase}
-        onOpenMetaSources={() => {
-          setShowMetaSources(true);
-          setShowEntities(false);
-          setDrawerOpen(false);
-          setDrawerSource(null);
-          setSelectedEntity(null);
-        }}
         onOpenEntities={() => {
           setShowEntities(true);
-          setShowMetaSources(false);
           setDrawerOpen(false);
           setDrawerSource(null);
           setSelectedEntity(null);
@@ -258,15 +220,7 @@ function App() {
         onDeleteCase={handleDeleteCase}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
-        {view === 'metaSources' ? (
-          <MetaSourcesPanel
-            metaSources={metaSources}
-            loading={metaSourcesLoading}
-            onCreate={createMetaSource}
-            onUpdate={handleUpdateMetaSource}
-            onDelete={handleDeleteMetaSource}
-          />
-        ) : view === 'entities' ? (
+        {view === 'entities' ? (
           <EntitiesPanel
             selectedCaseId={selectedCaseId}
             entities={entities}
@@ -281,8 +235,6 @@ function App() {
             container={selectedCase}
             sources={sources}
             sourcesLoading={sourcesLoading}
-            metaSources={metaSources}
-            metaSourcesLoading={metaSourcesLoading}
             entities={entities}
             entitiesLoading={entitiesLoading || entityTypesLoading}
             entityTypes={entityTypes}
@@ -294,9 +246,6 @@ function App() {
             onDeleteAttachment={deleteAttachment}
             onOpenAttachment={openAttachment}
             onOpenSourceDetail={handleOpenSourceDetail}
-            onCreateMetaSource={createMetaSource}
-            onUpdateMetaSource={handleUpdateMetaSource}
-            onDeleteMetaSource={handleDeleteMetaSource}
             onCreateEntity={handleCreateEntity}
             onDeleteEntity={handleDeleteEntity}
             onOpenEntityDetail={handleOpenEntityDetail}
@@ -308,7 +257,7 @@ function App() {
         onClose={() => setDrawerOpen(false)}
         source={activeDrawerSource}
         siblings={drawerSiblings}
-        metaSources={metaSources}
+        entities={entities}
         onUpdate={updateSource}
         onImportAttachment={importAttachment}
         onDeleteAttachment={deleteAttachment}

@@ -13,7 +13,8 @@ use sqlx::Row;
 use tauri::{command, AppHandle};
 
 use crate::database::pool;
-use crate::validation::patch_optional;
+use crate::commands::references::propagate_entity_rating;
+use crate::validation::{patch_optional, validate_reliability_quality_value};
 
 const ENTITY_COLUMNS: &str =
     "id, entity_type, name, description, case_id, is_global, created_at, updated_at";
@@ -26,7 +27,7 @@ const QUALITY_SOURCE_REF_COLUMNS: &str =
     "id, quality_id, source_id, reliability_code, credibility_code, created_at";
 
 /// The valid quality data types.
-pub const QUALITY_TYPES: &[&str] = &["string", "boolean", "integer", "date", "coordinates", "address"];
+pub const QUALITY_TYPES: &[&str] = &["string", "boolean", "integer", "date", "coordinates", "address", "reliability"];
 
 /// A stored entity.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -187,6 +188,25 @@ async fn fetch_quality(app: &AppHandle, id: &str) -> Result<Option<EntityQuality
         .map_err(|e| format!("Failed to get quality: {}", e))?;
 
     Ok(row.map(|row| quality_from_row(row)))
+}
+
+/// Returns the Admiralty reliability code (A-F) for an entity, read from its
+/// quality of type 'reliability'. Returns None if the entity has no such
+/// quality.
+pub async fn get_entity_reliability(
+    app: &AppHandle,
+    entity_id: &str,
+) -> Result<Option<String>, String> {
+    let pool = pool::pool(app).await?;
+    let row: Option<String> = sqlx::query_scalar(
+        "SELECT value_string FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability'",
+    )
+    .bind(entity_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| format!("Failed to read entity reliability: {}", e))?;
+
+    Ok(row)
 }
 
 /// Fetches all source references for a quality, joined with source titles.
@@ -509,6 +529,12 @@ pub async fn create_entity_quality(
     let quality_name = validate_name(&quality_name)?;
     validate_quality_type(&quality_type)?;
 
+    // A reliability quality carries an Admiralty code (A-F) in value_string.
+    if quality_type == "reliability" {
+        let val = value_string.as_deref().unwrap_or("");
+        validate_reliability_quality_value(val)?;
+    }
+
     let pool = pool::pool(&app).await?;
 
     // Verify the entity exists.
@@ -546,6 +572,12 @@ pub async fn create_entity_quality(
     .execute(&pool)
     .await
     .map_err(|e| format!("Failed to create quality: {}", e))?;
+
+    // If this is a reliability quality, propagate its value to all sources
+    // that reference this entity.
+    if quality_type == "reliability" {
+        propagate_entity_rating(&pool, &entity_id).await?;
+    }
 
     Ok(EntityQuality {
         id,
@@ -615,6 +647,13 @@ pub async fn update_entity_quality(
         None => existing.quality_type.clone(),
     };
 
+    // A reliability quality carries an Admiralty code (A-F) in value_string.
+    if next_type == "reliability" {
+        if let Some(Some(val)) = &value_string {
+            validate_reliability_quality_value(val)?;
+        }
+    }
+
     let mut updates: Vec<&str> = Vec::new();
     if quality_name.is_some() {
         updates.push("quality_name = ?");
@@ -683,6 +722,12 @@ pub async fn update_entity_quality(
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to update quality: {}", e))?;
+
+    // If this is a reliability quality, propagate its value to all sources
+    // that reference this entity.
+    if next_type == "reliability" {
+        propagate_entity_rating(&pool, &existing.entity_id).await?;
+    }
 
     let updated = fetch_quality(&app, &id)
         .await?

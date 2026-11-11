@@ -103,9 +103,9 @@ export function isReferenceLinked(source: SourceWithAttachments): boolean {
   return Boolean(source.reference_source_id);
 }
 
-/** True when a source cites a meta source. */
-export function isMetaReferenced(source: SourceWithAttachments): boolean {
-  return Boolean(source.reference_meta_source_id);
+/** True when a source cites an entity. */
+export function isEntityReferenced(source: SourceWithAttachments): boolean {
+  return Boolean(source.reference_entity_id);
 }
 
 function mean(values: number[]): number | null {

@@ -121,8 +121,9 @@ describe('EntitiesPanel', () => {
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
-    fireEvent.click(screen.getByText(/Types/));
-    expect(screen.getByText(/New Entity Type/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Types/ }));
+    const headings = screen.getAllByRole('heading', { name: /Manage Entity Types/ });
+    expect(headings.length).toBeGreaterThan(0);
   });
 
   it('calls onOpenEntityDetail when selecting an entity', () => {

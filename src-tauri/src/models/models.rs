@@ -49,55 +49,12 @@ impl Stance {
     }
 }
 
-/// What a meta source represents. Meta sources are the people and
-/// organisations behind the reporting, and exist outside any single case.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum MetaSourceKind {
-    Person,
-    Organization,
-    Other,
-}
-
-impl MetaSourceKind {
-    pub fn from_db(value: &str) -> Self {
-        match value {
-            "person" => MetaSourceKind::Person,
-            "other" => MetaSourceKind::Other,
-            _ => MetaSourceKind::Organization,
-        }
-    }
-
-    pub fn as_db(&self) -> &'static str {
-        match self {
-            MetaSourceKind::Person => "person",
-            MetaSourceKind::Organization => "organization",
-            MetaSourceKind::Other => "other",
-        }
-    }
-}
-
-/// A global, reusable source entity — a news agency, an official, a
-/// spokesperson. Ratings live here so a citing source can inherit them.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MetaSource {
-    pub id: String,
-    pub name: String,
-    pub kind: MetaSourceKind,
-    pub description: Option<String>,
-    pub url: Option<String>,
-    pub reliability_code: Option<String>,
-    pub credibility_code: Option<i32>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
 /// Which table a source's reference points at.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ReferenceKind {
     Source,
-    Meta,
+    Entity,
 }
 
 /// A resolved reference, with enough information for the UI to show what a
@@ -188,9 +145,9 @@ pub struct Source {
     pub stance: Option<Stance>,
     /// Sibling source in the same container this source reports on.
     pub reference_source_id: Option<String>,
-    /// Global meta source this source reports on. Mutually exclusive with
+    /// Global entity this source reports on. Mutually exclusive with
     /// `reference_source_id`.
-    pub reference_meta_source_id: Option<String>,
+    pub reference_entity_id: Option<String>,
     /// Optional calendar date (`YYYY-MM-DD`) the source itself refers to.
     pub source_date: Option<String>,
     /// Optional wall-clock time (`HH:MM`) paired with `source_date`.
@@ -265,7 +222,7 @@ impl Source {
         credibility_code: Option<i32>,
         stance: Option<Stance>,
         reference_source_id: Option<String>,
-        reference_meta_source_id: Option<String>,
+        reference_entity_id: Option<String>,
         source_date: Option<String>,
         source_time: Option<String>,
         custom_metadata: serde_json::Value,
@@ -282,34 +239,10 @@ impl Source {
             credibility_code,
             stance,
             reference_source_id,
-            reference_meta_source_id,
+            reference_entity_id,
             source_date,
             source_time,
             custom_metadata: custom_metadata.to_string(),
-            created_at: now.clone(),
-            updated_at: now,
-        }
-    }
-}
-
-impl MetaSource {
-    pub fn new(
-        name: String,
-        kind: MetaSourceKind,
-        description: Option<String>,
-        url: Option<String>,
-        reliability_code: Option<String>,
-        credibility_code: Option<i32>,
-    ) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
-        Self {
-            id: Uuid::new_v4().to_string(),
-            name,
-            kind,
-            description,
-            url,
-            reliability_code,
-            credibility_code,
             created_at: now.clone(),
             updated_at: now,
         }

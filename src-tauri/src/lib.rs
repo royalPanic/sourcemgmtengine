@@ -30,7 +30,7 @@ mod migration_tests;
 #[cfg(test)]
 mod download_tests;
 
-use commands::{cases, entities, files, meta_sources, sources};
+use commands::{cases, entities, files, sources};
 use database::connection::init_sql_plugin;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -55,10 +55,6 @@ pub fn run() {
             sources::delete_source,
             sources::add_source_attachment,
             sources::delete_source_attachment,
-            meta_sources::create_meta_source,
-            meta_sources::get_meta_sources,
-            meta_sources::update_meta_source,
-            meta_sources::delete_meta_source,
             entities::get_entity_types,
             entities::create_entity,
             entities::get_entities,

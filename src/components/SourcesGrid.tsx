@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
 import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
 import { formatEventDate } from './Sidebar';
@@ -18,7 +18,7 @@ import {
 interface SourcesGridProps {
   sources: SourceWithAttachments[];
   loading: boolean;
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onCreateSource: (params: {
     title: string;
     sourceType: SourceType;
@@ -28,7 +28,7 @@ interface SourcesGridProps {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -42,7 +42,7 @@ interface SourcesGridProps {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -57,7 +57,7 @@ interface SourcesGridProps {
 export function SourcesGrid({
   sources,
   loading,
-  metaSources,
+  entities,
   onCreateSource,
   onDeleteSource,
   onOpenDetail,
@@ -125,14 +125,14 @@ export function SourcesGrid({
                       <div
                         className="text-xs text-amber-400/70 truncate max-w-xs"
                         title={
-                          source.reference.kind === 'meta'
-                            ? 'References a meta source'
+                          source.reference.kind === 'entity'
+                            ? 'References an entity'
                             : 'References another source in this container'
                         }
                       >
                         via {source.reference.label}
-                        {source.reference.kind === 'meta' && (
-                          <span className="text-zinc-500"> · meta</span>
+                        {source.reference.kind === 'entity' && (
+                          <span className="text-zinc-500"> · entity</span>
                         )}
                       </div>
                     )}
@@ -211,7 +211,7 @@ export function SourcesGrid({
       {showNewSource && (
         <NewSourceModal
           siblings={sources}
-          metaSources={metaSources}
+          entities={entities}
           onClose={() => setShowNewSource(false)}
           onSubmit={async (params) => {
             await onCreateSource(params);
@@ -243,12 +243,12 @@ export function StanceBadge({ stance }: { stance: Stance | null }) {
 
 function NewSourceModal({
   siblings,
-  metaSources,
+  entities,
   onClose,
   onSubmit,
 }: {
   siblings: SourceWithAttachments[];
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onClose: () => void;
   onSubmit: (params: {
     title: string;
@@ -259,7 +259,7 @@ function NewSourceModal({
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
   }) => Promise<void>;
@@ -375,12 +375,12 @@ function NewSourceModal({
             <ReferenceSelect
               value={reference}
               siblings={siblings}
-              metaSources={metaSources}
+              entities={entities}
               disabled={submitting}
               onChange={(next) => {
                 setReference(next);
                 // Mirror the reference's rating as the default.
-                const rating = referenceRating(next, siblings, metaSources);
+                const rating = referenceRating(next, siblings, entities);
                 setReliabilityCode(rating?.reliability_code ?? '');
                 setCredibilityCode(
                   rating?.credibility_code ? String(rating.credibility_code) : ''

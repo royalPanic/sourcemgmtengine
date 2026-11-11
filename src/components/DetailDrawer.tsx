@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance, Entity } from '../types';
 import {
   SOURCE_TYPES,
   RELIABILITY_CODES,
@@ -13,7 +13,6 @@ import {
 import { MediaPreview } from './MediaPreview';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
 import { ReferenceSelect, locksStance, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
-import type { MetaSourceSummary } from '../types';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
@@ -31,7 +30,7 @@ interface DetailDrawerProps {
   source: SourceWithAttachments | null;
   /** Sibling sources in the same container, for the reference dropdown. */
   siblings: SourceWithAttachments[];
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onUpdate: (id: string, params: Partial<{
     title: string;
     sourceType: SourceType;
@@ -41,7 +40,7 @@ interface DetailDrawerProps {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -61,7 +60,7 @@ export function DetailDrawer({
   onClose,
   source,
   siblings,
-  metaSources,
+  entities,
   onUpdate,
   onImportAttachment,
   onDeleteAttachment,
@@ -388,14 +387,14 @@ export function DetailDrawer({
             <ReferenceSelect
               value={reference}
               siblings={siblings}
-              metaSources={metaSources}
+              entities={entities}
               disabled={saving}
               onChange={(next) => {
                 setReference(next);
                 // Mirror the reference's rating as the default. Live sync means
                 // the backend re-applies it on save anyway, but showing the
                 // value here makes the inheritance visible before committing.
-                const rating = referenceRating(next, siblings, metaSources);
+                const rating = referenceRating(next, siblings, entities);
                 setReliabilityCode(rating?.reliability_code ?? '');
                 setCredibilityCode(
                   rating?.credibility_code ? String(rating.credibility_code) : ''

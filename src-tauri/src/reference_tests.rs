@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod tests {
     use crate::commands::references::{
-        propagate_meta_rating, propagate_rating, reference_rating, resolve_reference,
+        propagate_entity_rating, propagate_rating, reference_rating, resolve_reference,
         validate_reference, ReferenceError, ReferenceInput,
     };
     use crate::models::models::ReferenceKind;
@@ -26,16 +26,25 @@ mod tests {
             kind TEXT NOT NULL DEFAULT 'case'
         );
 
-        CREATE TABLE meta_sources (
+        CREATE TABLE entities (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            kind TEXT NOT NULL DEFAULT 'organization',
+            entity_type TEXT NOT NULL DEFAULT 'organization',
             description TEXT,
             url TEXT,
-            reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
-            credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE entity_qualities (
+            id TEXT PRIMARY KEY,
+            entity_id TEXT NOT NULL,
+            quality_name TEXT NOT NULL,
+            quality_type TEXT NOT NULL,
+            value_string TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
         );
 
         CREATE TABLE sources (
@@ -46,7 +55,7 @@ mod tests {
             credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
             stance TEXT CHECK (stance IN ('supports','refutes','neutral')),
             reference_source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
-            reference_meta_source_id TEXT REFERENCES meta_sources(id) ON DELETE SET NULL,
+            reference_entity_id TEXT REFERENCES entities(id) ON DELETE SET NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -54,9 +63,9 @@ mod tests {
         CREATE TRIGGER sources_reference_exclusive_insert
         BEFORE INSERT ON sources
         WHEN NEW.reference_source_id IS NOT NULL
-         AND NEW.reference_meta_source_id IS NOT NULL
+         AND NEW.reference_entity_id IS NOT NULL
         BEGIN
-            SELECT RAISE(ABORT, 'A source may reference a source or a meta source, not both');
+            SELECT RAISE(ABORT, 'A source may reference a source or an entity, not both');
         END;
     "#;
 
@@ -100,23 +109,19 @@ mod tests {
         .expect("insert source");
     }
 
-    async fn insert_meta(
+    async fn insert_entity(
         pool: &sqlx::SqlitePool,
         id: &str,
         name: &str,
-        reliability: Option<&str>,
-        credibility: Option<i32>,
     ) {
         sqlx::query(
-            "INSERT INTO meta_sources (id, name, reliability_code, credibility_code) VALUES (?, ?, ?, ?)",
+            "INSERT INTO entities (id, name) VALUES (?, ?)",
         )
         .bind(id)
         .bind(name)
-        .bind(reliability)
-        .bind(credibility)
         .execute(pool)
         .await
-        .expect("insert meta source");
+        .expect("insert entity");
     }
 
     async fn rating(pool: &sqlx::SqlitePool, id: &str) -> (Option<String>, Option<i32>, Option<String>) {
@@ -134,7 +139,7 @@ mod tests {
         ReferenceInput::new(Some(id.to_string()), None)
     }
 
-    fn meta_ref(id: &str) -> ReferenceInput {
+    fn entity_ref(id: &str) -> ReferenceInput {
         ReferenceInput::new(None, Some(id.to_string()))
     }
 
@@ -145,7 +150,7 @@ mod tests {
         let input = ReferenceInput::new(Some(String::new()), Some("   ".to_string()));
         assert!(!input.is_set());
         assert_eq!(input.source_id, None);
-        assert_eq!(input.meta_source_id, None);
+        assert_eq!(input.entity_id, None);
     }
 
     #[tokio::test]
@@ -183,10 +188,10 @@ mod tests {
             ReferenceError::SourceMissing
         );
         assert_eq!(
-            validate_reference(&pool, "case-1", "s1", &meta_ref("nope"))
+        validate_reference(&pool, "case-1", "s1", &entity_ref("nope"))
                 .await
-                .expect_err("missing meta source"),
-            ReferenceError::MetaMissing
+            .expect_err("missing entity"),
+        ReferenceError::EntityMissing
         );
     }
 
@@ -195,7 +200,7 @@ mod tests {
         let pool = pool().await;
         insert_source(&pool, "s1", "case-1", None, None, None).await;
         insert_source(&pool, "s2", "case-1", None, None, None).await;
-        insert_meta(&pool, "m1", "Reuters", Some("A"), Some(1)).await;
+        insert_entity(&pool, "m1", "Reuters").await;
 
         let both = ReferenceInput::new(Some("s2".into()), Some("m1".into()));
         assert_eq!(
@@ -248,10 +253,10 @@ mod tests {
     #[tokio::test]
     async fn a_citing_source_inherits_the_reference_rating() {
         let pool = pool().await;
-        insert_meta(&pool, "m1", "Reuters", Some("B"), Some(2)).await;
+        insert_entity(&pool, "m1", "Reuters").await;
 
-        let rating = reference_rating(&pool, &meta_ref("m1")).await.unwrap();
-        assert_eq!(rating, (Some("B".to_string()), Some(2)));
+        let rating = reference_rating(&pool, &entity_ref("m1")).await.unwrap();
+        assert_eq!(rating, (None, None));
     }
 
     #[tokio::test]
@@ -296,23 +301,27 @@ mod tests {
     #[tokio::test]
     async fn editing_a_meta_source_propagates_the_rating_but_keeps_the_stance() {
         let pool = pool().await;
-        insert_meta(&pool, "m1", "Reuters", Some("B"), Some(2)).await;
+        insert_entity(&pool, "m1", "Reuters").await;
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'm1', 'Reliability', 'reliability', 'B')")
+            .execute(&pool)
+            .await
+            .unwrap();
         insert_source(&pool, "s1", "case-1", Some("B"), Some(2), Some("supports")).await;
         insert_source(&pool, "s2", "case-1", Some("B"), Some(2), Some("refutes")).await;
 
-        sqlx::query("UPDATE sources SET reference_meta_source_id = 'm1' WHERE id IN ('s1','s2')")
+        sqlx::query("UPDATE sources SET reference_entity_id = 'm1' WHERE id IN ('s1','s2')")
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE meta_sources SET reliability_code = 'F', credibility_code = 6 WHERE id = 'm1'")
+        sqlx::query("UPDATE entity_qualities SET value_string = 'F' WHERE entity_id = 'm1' AND quality_type = 'reliability'")
             .execute(&pool)
             .await
             .unwrap();
 
-        propagate_meta_rating(&pool, "m1").await.unwrap();
+        propagate_entity_rating(&pool, "m1").await.unwrap();
 
-        assert_eq!(rating(&pool, "s1").await, (Some("F".into()), Some(6), Some("supports".into())));
-        assert_eq!(rating(&pool, "s2").await, (Some("F".into()), Some(6), Some("refutes".into())));
+        assert_eq!(rating(&pool, "s1").await, (Some("F".into()), Some(2), Some("supports".into())));
+        assert_eq!(rating(&pool, "s2").await, (Some("F".into()), Some(2), Some("refutes".into())));
     }
 
     #[tokio::test]
@@ -361,7 +370,7 @@ mod tests {
         // carry a stance. A meta source may publish several viewpoints, so its
         // citations stay classifiable.
         assert!(source_ref("s2").locks_stance());
-        assert!(!meta_ref("m1").locks_stance());
+        assert!(!entity_ref("m1").locks_stance());
         assert!(!ReferenceInput::default().locks_stance());
     }
 
@@ -371,10 +380,10 @@ mod tests {
     async fn the_schema_rejects_both_references_on_one_row() {
         let pool = pool().await;
         insert_source(&pool, "s1", "case-1", None, None, None).await;
-        insert_meta(&pool, "m1", "Reuters", None, None).await;
+        insert_entity(&pool, "m1", "Reuters").await;
 
         let result = sqlx::query(
-            "INSERT INTO sources (id, case_id, reference_source_id, reference_meta_source_id) \
+            "INSERT INTO sources (id, case_id, reference_source_id, reference_entity_id) \
              VALUES ('bad', 'case-1', 's1', 'm1')",
         )
         .execute(&pool)
@@ -386,19 +395,19 @@ mod tests {
     #[tokio::test]
     async fn deleting_a_reference_leaves_the_citation_rated() {
         let pool = pool().await;
-        insert_meta(&pool, "m1", "Reuters", Some("A"), Some(1)).await;
+        insert_entity(&pool, "m1", "Reuters").await;
         insert_source(&pool, "s1", "case-1", Some("A"), Some(1), None).await;
-        sqlx::query("UPDATE sources SET reference_meta_source_id = 'm1' WHERE id = 's1'")
+        sqlx::query("UPDATE sources SET reference_entity_id = 'm1' WHERE id = 's1'")
             .execute(&pool)
             .await
             .unwrap();
 
-        // Mirrors `delete_meta_source`.
-        sqlx::query("UPDATE sources SET reference_meta_source_id = NULL WHERE reference_meta_source_id = 'm1'")
+        // Mirrors `delete_entity`.
+        sqlx::query("UPDATE sources SET reference_entity_id = NULL WHERE reference_entity_id = 'm1'")
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("DELETE FROM meta_sources WHERE id = 'm1'")
+        sqlx::query("DELETE FROM entities WHERE id = 'm1'")
             .execute(&pool)
             .await
             .unwrap();
@@ -415,16 +424,16 @@ mod tests {
     #[tokio::test]
     async fn references_resolve_to_a_labelled_target() {
         let pool = pool().await;
-        insert_meta(&pool, "m1", "Reuters", Some("B"), Some(2)).await;
+        insert_entity(&pool, "m1", "Reuters").await;
 
         let resolved = resolve_reference(&pool, None, Some("m1"))
             .await
             .unwrap()
             .expect("resolvable");
-        assert_eq!(resolved.kind, ReferenceKind::Meta);
+        assert_eq!(resolved.kind, ReferenceKind::Entity);
         assert_eq!(resolved.label, "Reuters");
-        assert_eq!(resolved.reliability_code.as_deref(), Some("B"));
-        assert_eq!(resolved.credibility_code, Some(2));
+        assert_eq!(resolved.reliability_code, None);
+        assert_eq!(resolved.credibility_code, None);
     }
 
     #[tokio::test]

@@ -20,7 +20,7 @@ function source(
     credibility_code: credibility,
     stance,
     reference_source_id: null,
-    reference_meta_source_id: null,
+    reference_entity_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',

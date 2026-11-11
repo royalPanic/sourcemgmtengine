@@ -6,7 +6,8 @@ interface EntityTypeDesignerProps {
   onClose: () => void;
 }
 
-export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
+export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) {
+  const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list');
   const [editingType, setEditingType] = useState<EntityType | null>(null);
   const [newTypeId, setNewTypeId] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
@@ -25,9 +26,11 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
     date: 'Date',
     coordinates: 'Coordinates',
     address: 'Address',
+    reliability: 'Reliability (A–F)',
   };
 
   const handleStartNew = () => {
+    setMode('new');
     setEditingType(null);
     setNewTypeId('');
     setNewTypeName('');
@@ -36,6 +39,20 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
     setNewQualityName('');
     setNewQualityType('string');
     setNewQualityRequired(false);
+  };
+
+  const handleEditType = (type: EntityType) => {
+    setMode('edit');
+    setEditingType(type);
+    setNewTypeId(type.id);
+    setNewTypeName(type.name);
+    setNewTypeDescription(type.description ?? '');
+    setQualities(type.default_qualities);
+  };
+
+  const handleBackToList = () => {
+    setMode('list');
+    setEditingType(null);
   };
 
   const handleAddQuality = () => {
@@ -78,16 +95,109 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
     }
   };
 
+  // Show list view when not editing/creating
+  if (mode === 'list') {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-zinc-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-ghost p-1.5 text-zinc-400 hover:text-zinc-200"
+            title="Back to entities"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h2 className="text-sm font-medium text-zinc-300">Manage Entity Types</h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-[11px] text-zinc-500">
+              Entity type templates define the default qualities for entities of that type.
+              Pre-seeded types ship with the app; custom types can be created here.
+            </p>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleStartNew}
+              disabled={submitting}
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Type
+            </button>
+          </div>
+
+          {types.length === 0 ? (
+            <div className="text-center py-16 text-zinc-500">
+              <p className="text-sm">No entity types yet</p>
+              <p className="text-xs mt-1">Create a type to start defining entity templates</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {types.map(type => (
+                <div
+                  key={type.id}
+                  className="card p-3 hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                  onClick={() => handleEditType(type)}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-zinc-100 truncate">{type.name}</h3>
+                      <span className="text-[10px] px-1.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                        {type.id}
+                      </span>
+                    </div>
+                    <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2-11-4z" />
+                    </svg>
+                  </div>
+                  {type.description && (
+                    <p className="text-xs text-zinc-500 mb-2">{type.description}</p>
+                  )}
+                  <div className="flex gap-1">
+                    {type.default_qualities.map(q => (
+                      <span
+                        key={q.name}
+                        className="text-[10px] px-1.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30"
+                      >
+                        {q.name} ({q.type}){q.required ? ' • required' : ''}
+                      </span>
+                    ))}
+                    {type.default_qualities.length === 0 && (
+                      <span className="text-[10px] text-zinc-600 italic">No default qualities</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Edit/create form view
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-800">
+      <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-zinc-800">
+        <button
+          type="button"
+          onClick={handleBackToList}
+          className="btn-ghost p-1.5 text-zinc-400 hover:text-zinc-200"
+          title="Back to type list"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
         <h2 className="text-sm font-medium text-zinc-300">
           {editingType ? `Edit: ${editingType.name}` : 'New Entity Type'}
         </h2>
-        <p className="text-[11px] text-zinc-500 mt-0.5">
-          Define the type ID, name, description, and default qualities. Templates are stored as JSON
-          files and can be exported/imported.
-        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -153,8 +263,8 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
                 onChange={(e) => setNewQualityType(e.target.value as QualityType)}
                 className="select text-xs"
               >
-                {QUALITY_TYPES.map(t => (
-                  <option key={t} value={t}>{QUALITY_TYPE_LABELS[t]}</option>
+                {['string', 'boolean', 'integer', 'date', 'coordinates', 'address'].map(t => (
+                  <option key={t} value={t}>{QUALITY_TYPE_LABELS[t as QualityType]}</option>
                 ))}
               </select>
             </div>
@@ -214,10 +324,10 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
           <button
             type="button"
             className="btn-secondary"
-            onClick={editingType ? () => setEditingType(null) : handleStartNew}
+            onClick={handleBackToList}
             disabled={submitting}
           >
-            {editingType ? 'Cancel Edit' : 'Cancel'}
+            Cancel
           </button>
           <button
             type="button"
@@ -232,5 +342,3 @@ export function EntityTypeDesigner({ onClose }: EntityTypeDesignerProps) {
     </div>
   );
 }
-
-const QUALITY_TYPES: QualityType[] = ['string', 'boolean', 'integer', 'date', 'coordinates', 'address'];

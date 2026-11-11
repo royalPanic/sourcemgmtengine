@@ -63,6 +63,21 @@ pub fn validate_reliability_patch(value: &Option<String>) -> Result<(), String> 
     }
 }
 
+/// Validates that a value is a valid Admiralty reliability code (A-F) for an
+/// entity quality of type 'reliability'. Unlike `validate_reliability_patch`,
+/// an empty string is an error here because a reliability quality must carry
+/// a value.
+pub fn validate_reliability_quality_value(value: &str) -> Result<(), String> {
+    if is_reliability_code(value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Reliability must be one of A-F, got \"{}\"",
+            value
+        ))
+    }
+}
+
 /// Validates a credibility patch. `0` is a clear, not an error.
 pub fn validate_credibility_patch(value: Option<i32>) -> Result<(), String> {
     match value {

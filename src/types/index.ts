@@ -33,35 +33,15 @@ export interface SourceCustomMetadata {
   [key: string]: string | number | boolean | null | undefined;
 }
 
-/** What a meta source represents. */
-export type MetaSourceKind = 'person' | 'organization' | 'other';
+// --- Entities ---
 
-/**
- * A global, reusable entity — a news agency, an official, a spokesperson.
- *
- * Meta sources exist outside any single case so the same entity is described
- * once and cited from anywhere. Their Admiralty rating is what a citing source
- * inherits.
- */
-export interface MetaSource {
-  id: string;
-  name: string;
-  kind: MetaSourceKind;
-  description: string | null;
-  url: string | null;
-  reliability_code: ReliabilityCode | null;
-  credibility_code: CredibilityCode | null;
-  created_at: string;
-  updated_at: string;
-}
+/** A quality data type. */
+export type QualityType = 'string' | 'boolean' | 'integer' | 'date' | 'coordinates' | 'address' | 'reliability';
 
-/** A meta source plus how many sources cite it. */
-export interface MetaSourceSummary extends MetaSource {
-  citation_count: number;
-}
+export const QUALITY_TYPES: QualityType[] = ['string', 'boolean', 'integer', 'date', 'coordinates', 'address', 'reliability'];
 
 /** Which table a source's reference points at. */
-export type ReferenceKind = 'source' | 'meta';
+export type ReferenceKind = 'source' | 'entity';
 
 /** A resolved reference, labelled for display. */
 export interface SourceReference {
@@ -84,8 +64,8 @@ export interface Source {
   stance: Stance | null;
   /** Sibling source in the same container this source reports on. */
   reference_source_id: string | null;
-  /** Global meta source this source reports on. Mutually exclusive with the above. */
-  reference_meta_source_id: string | null;
+  /** Entity this source reports on. Mutually exclusive with the above. */
+  reference_entity_id: string | null;
   /** Optional calendar date the source itself refers to, `YYYY-MM-DD`. */
   source_date: string | null;
   /** Optional wall-clock time, `HH:MM`. Requires `source_date`. */
@@ -204,11 +184,6 @@ export const STANCE_DEFINITIONS: Record<Stance, { label: string; description: st
 export const STANCE_NONE_LABEL = 'None / N/A';
 
 // --- Entities ---
-
-/** A quality data type. */
-export type QualityType = 'string' | 'boolean' | 'integer' | 'date' | 'coordinates' | 'address';
-
-export const QUALITY_TYPES: QualityType[] = ['string', 'boolean', 'integer', 'date', 'coordinates', 'address'];
 
 /** A single quality definition within an entity type template. */
 export interface EntityTypeQuality {
