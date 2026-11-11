@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { Entity, EntityType } from '../types';
-import { EntityDetailDrawer } from './EntityDetailDrawer';
 import { EntityTypeSelector } from './EntityTypeSelector';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
 
@@ -17,42 +16,7 @@ interface EntitiesPanelProps {
     caseId?: string;
     isGlobal: boolean;
   }) => Promise<void>;
-  onUpdateEntity: (id: string, params: Partial<{
-    name: string;
-    description: string;
-    caseId: string;
-    isGlobal: boolean;
-  }>) => Promise<void>;
   onDeleteEntity: (id: string) => Promise<void>;
-  onCreateQuality: (params: {
-    entityId: string;
-    qualityName: string;
-    qualityType: string;
-    valueString?: string | null;
-    valueInteger?: number | null;
-    valueBoolean?: boolean | null;
-    valueDate?: string | null;
-    valueCoordinates?: string | null;
-    valueAddress?: string | null;
-  }) => Promise<void>;
-  onUpdateQuality: (id: string, params: Partial<{
-    qualityName: string;
-    qualityType: string;
-    valueString: string | null;
-    valueInteger: number | null;
-    valueBoolean: boolean | null;
-    valueDate: string | null;
-    valueCoordinates: string | null;
-    valueAddress: string | null;
-  }>) => Promise<void>;
-  onDeleteQuality: (id: string) => Promise<void>;
-  onAddQualitySourceRef: (params: {
-    qualityId: string;
-    sourceId: string;
-    reliabilityCode?: string;
-    credibilityCode?: number;
-  }) => Promise<void>;
-  onRemoveQualitySourceRef: (refId: string) => Promise<void>;
   onOpenEntityDetail: (entity: Entity) => void;
 }
 
@@ -62,13 +26,7 @@ export function EntitiesPanel({
   entityTypes,
   loading,
   onCreateEntity,
-  onUpdateEntity,
   onDeleteEntity,
-  onCreateQuality,
-  onUpdateQuality,
-  onDeleteQuality,
-  onAddQualitySourceRef,
-  onRemoveQualitySourceRef,
   onOpenEntityDetail,
 }: EntitiesPanelProps) {
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
@@ -308,22 +266,6 @@ export function EntitiesPanel({
             </form>
           </div>
         </div>
-      )}
-      {selectedEntity && (
-        <EntityDetailDrawer
-          isOpen={true}
-          onClose={() => setSelectedEntity(null)}
-          entity={selectedEntity}
-          qualities={[]}
-          sources={[]}
-          onUpdateEntity={onUpdateEntity}
-          onDeleteEntity={handleDeleteEntity}
-          onCreateQuality={onCreateQuality}
-          onUpdateQuality={onUpdateQuality}
-          onDeleteQuality={onDeleteQuality}
-          onAddQualitySourceRef={onAddQualitySourceRef}
-          onRemoveQualitySourceRef={onRemoveQualitySourceRef}
-        />
       )}
     </div>
   );

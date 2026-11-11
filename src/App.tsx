@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { qualitiesApi, qualitySourceRefsApi } from './api/tauri';
 import { Sidebar } from './components/Sidebar';
 import { MainContent } from './components/MainContent';
 import { DetailDrawer } from './components/DetailDrawer';
@@ -11,19 +12,20 @@ import { useSources } from './hooks/useSources';
 import { useMetaSources } from './hooks/useMetaSources';
 import { useEntities } from './hooks/useEntities';
 import { useEntityTypes } from './hooks/useEntityTypes';
-import type { SourceWithAttachments, ContainerKind, Entity } from './types';
+import { useEntityQualities } from './hooks/useEntities';
+import type { SourceWithAttachments, Entity } from './types';
 
 function App() {
   const { cases, loading, createCase, updateCase, deleteCase } = useCases();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSource, setDrawerSource] = useState<SourceWithAttachments | null>(null);
-  const [newContainerKind, setNewContainerKind] = useState<ContainerKind | null>(null);
   // The meta source manager replaces the container view rather than opening a
   // modal, because it is a workspace-level list with its own table.
   const [showMetaSources, setShowMetaSources] = useState(false);
   // The entities panel replaces the container view.
   const [showEntities, setShowEntities] = useState(false);
+  const [showNewContainer, setShowNewContainer] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
 
   const {
@@ -59,6 +61,8 @@ function App() {
     deleteEntity,
   } = useEntities(selectedCaseId, showEntities ? undefined : true);
 
+  const { qualities: entityQualities, loadQualities: reloadQualities } = useEntityQualities(selectedEntity?.id ?? null);
+
   const {
     types: entityTypes,
     loading: entityTypesLoading,
@@ -87,7 +91,6 @@ function App() {
   const handleCreateContainer = async (params: {
     title: string;
     description?: string;
-    kind: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => {
@@ -95,7 +98,6 @@ function App() {
     setSelectedCaseId(created.id);
     setShowMetaSources(false);
     setShowEntities(false);
-    setNewContainerKind(null);
   };
 
   const handleDeleteCase = async (caseId: string) => {
@@ -147,7 +149,7 @@ function App() {
     }
   };
 
-  const handleCreateQuality = async (_params: {
+  const handleCreateQuality = async (params: {
     entityId: string;
     qualityName: string;
     qualityType: string;
@@ -158,10 +160,20 @@ function App() {
     valueCoordinates?: string | null;
     valueAddress?: string | null;
   }) => {
-    // Qualities are created through the detail drawer.
+    await qualitiesApi.create({
+      entityId: params.entityId,
+      qualityName: params.qualityName,
+      qualityType: params.qualityType as import('./types').QualityType,
+      valueString: params.valueString ?? undefined,
+      valueInteger: params.valueInteger ?? undefined,
+      valueBoolean: params.valueBoolean ?? undefined,
+      valueDate: params.valueDate ?? undefined,
+      valueCoordinates: params.valueCoordinates ?? undefined,
+      valueAddress: params.valueAddress ?? undefined,
+    });
   };
 
-  const handleUpdateQuality = async (_id: string, _params: Partial<{
+  const handleUpdateQuality = async (id: string, params: Partial<{
     qualityName: string;
     qualityType: string;
     valueString: string | null;
@@ -171,24 +183,40 @@ function App() {
     valueCoordinates: string | null;
     valueAddress: string | null;
   }>) => {
-    // Qualities are updated through the detail drawer.
+    await qualitiesApi.update(id, {
+      qualityName: params.qualityName ?? undefined,
+      qualityType: params.qualityType as import('./types').QualityType | undefined,
+      valueString: params.valueString ?? undefined,
+      valueInteger: params.valueInteger ?? undefined,
+      valueBoolean: params.valueBoolean ?? undefined,
+      valueDate: params.valueDate ?? undefined,
+      valueCoordinates: params.valueCoordinates ?? undefined,
+      valueAddress: params.valueAddress ?? undefined,
+    });
   };
 
-  const handleDeleteQuality = async (_id: string) => {
-    // Qualities are deleted through the detail drawer.
+  const handleDeleteQuality = async (id: string) => {
+    await qualitiesApi.delete(id);
   };
 
-  const handleAddQualitySourceRef = async (_params: {
+  const handleAddQualitySourceRef = async (params: {
     qualityId: string;
     sourceId: string;
     reliabilityCode?: string;
     credibilityCode?: number;
   }) => {
-    // Source refs are managed through the detail drawer.
+    await qualitySourceRefsApi.add({
+      qualityId: params.qualityId,
+      sourceId: params.sourceId,
+      reliabilityCode: params.reliabilityCode as import('./types').ReliabilityCode | undefined,
+      credibilityCode: params.credibilityCode as import('./types').CredibilityCode | undefined,
+    });
+    await reloadQualities();
   };
 
-  const handleRemoveQualitySourceRef = async (_refId: string) => {
-    // Source refs are managed through the detail drawer.
+  const handleRemoveQualitySourceRef = async (refId: string) => {
+    await qualitySourceRefsApi.remove(refId);
+    await reloadQualities();
   };
 
   // Keep the open drawer in sync with the latest source state.
@@ -226,8 +254,7 @@ function App() {
           setDrawerSource(null);
           setSelectedEntity(null);
         }}
-        onCreateCase={() => setNewContainerKind('case')}
-        onCreateEvent={() => setNewContainerKind('event')}
+        onCreateCase={() => setShowNewContainer(true)}
         onDeleteCase={handleDeleteCase}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -246,13 +273,7 @@ function App() {
             entityTypes={entityTypes}
             loading={entitiesLoading || entityTypesLoading}
             onCreateEntity={handleCreateEntity}
-            onUpdateEntity={handleUpdateEntity}
             onDeleteEntity={handleDeleteEntity}
-            onCreateQuality={handleCreateQuality}
-            onUpdateQuality={handleUpdateQuality}
-            onDeleteQuality={handleDeleteQuality}
-            onAddQualitySourceRef={handleAddQualitySourceRef}
-            onRemoveQualitySourceRef={handleRemoveQualitySourceRef}
             onOpenEntityDetail={handleOpenEntityDetail}
           />
         ) : (
@@ -261,6 +282,10 @@ function App() {
             sources={sources}
             sourcesLoading={sourcesLoading}
             metaSources={metaSources}
+            metaSourcesLoading={metaSourcesLoading}
+            entities={entities}
+            entitiesLoading={entitiesLoading || entityTypesLoading}
+            entityTypes={entityTypes}
             onUpdateContainer={updateCase}
             onCreateSource={createSource}
             onUpdateSource={updateSource}
@@ -269,6 +294,12 @@ function App() {
             onDeleteAttachment={deleteAttachment}
             onOpenAttachment={openAttachment}
             onOpenSourceDetail={handleOpenSourceDetail}
+            onCreateMetaSource={createMetaSource}
+            onUpdateMetaSource={handleUpdateMetaSource}
+            onDeleteMetaSource={handleDeleteMetaSource}
+            onCreateEntity={handleCreateEntity}
+            onDeleteEntity={handleDeleteEntity}
+            onOpenEntityDetail={handleOpenEntityDetail}
           />
         )}
       </div>
@@ -276,7 +307,6 @@ function App() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         source={activeDrawerSource}
-        isEvent={selectedCase?.kind === 'event'}
         siblings={drawerSiblings}
         metaSources={metaSources}
         onUpdate={updateSource}
@@ -293,7 +323,7 @@ function App() {
         isOpen={selectedEntity !== null}
         onClose={() => setSelectedEntity(null)}
         entity={selectedEntity}
-        qualities={[]}
+        qualities={entityQualities}
         sources={sources.map(s => ({ id: s.id, title: s.title }))}
         onUpdateEntity={handleUpdateEntity}
         onDeleteEntity={handleDeleteEntity}
@@ -303,10 +333,9 @@ function App() {
         onAddQualitySourceRef={handleAddQualitySourceRef}
         onRemoveQualitySourceRef={handleRemoveQualitySourceRef}
       />
-      {newContainerKind && (
+      {showNewContainer && (
         <NewContainerModal
-          kind={newContainerKind}
-          onClose={() => setNewContainerKind(null)}
+          onClose={() => setShowNewContainer(false)}
           onSubmit={handleCreateContainer}
         />
       )}

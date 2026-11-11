@@ -112,7 +112,8 @@ export function useEntityQualities(entityId: string | null) {
       valueCoordinates: params.valueCoordinates ?? undefined,
       valueAddress: params.valueAddress ?? undefined,
     });
-    setQualities(prev => [...prev, { ...created, source_refs: [] }]);
+    // Reload so source_refs (if any) are populated and the list stays in sync.
+    await loadQualities();
     return created;
   };
 
@@ -127,8 +128,8 @@ export function useEntityQualities(entityId: string | null) {
     valueAddress: string | null;
   }>) => {
     const updated = await qualitiesApi.update(id, {
-      qualityName: params.qualityName,
-      qualityType: params.qualityType,
+      qualityName: params.qualityName ?? undefined,
+      qualityType: params.qualityType ?? undefined,
       valueString: params.valueString ?? undefined,
       valueInteger: params.valueInteger ?? undefined,
       valueBoolean: params.valueBoolean ?? undefined,
@@ -136,13 +137,13 @@ export function useEntityQualities(entityId: string | null) {
       valueCoordinates: params.valueCoordinates ?? undefined,
       valueAddress: params.valueAddress ?? undefined,
     });
-    setQualities(prev => prev.map(q => (q.id === id ? updated : q)));
+    await loadQualities();
     return updated;
   };
 
   const deleteQuality = async (id: string) => {
     await qualitiesApi.delete(id);
-    setQualities(prev => prev.filter(q => q.id !== id));
+    await loadQualities();
   };
 
   return {

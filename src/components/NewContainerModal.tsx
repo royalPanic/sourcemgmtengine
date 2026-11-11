@@ -1,20 +1,17 @@
 import { useState } from 'react';
-import type { ContainerKind } from '../types';
 import { TimeInput } from './TimeInput';
 
 interface NewContainerModalProps {
-  kind: ContainerKind;
   onClose: () => void;
   onSubmit: (params: {
     title: string;
     description?: string;
-    kind: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => Promise<void>;
 }
 
-export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModalProps) {
+export function NewContainerModal({ onClose, onSubmit }: NewContainerModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [eventDate, setEventDate] = useState('');
@@ -22,8 +19,6 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
   const [timeValid, setTimeValid] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isEvent = kind === 'event';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,9 +30,8 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
       await onSubmit({
         title: title.trim(),
         description: description.trim() || undefined,
-        kind,
-        eventDate: isEvent && eventDate ? eventDate : undefined,
-        eventTime: isEvent && eventTime ? eventTime : undefined,
+        eventDate: eventDate || undefined,
+        eventTime: eventTime || undefined,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -49,13 +43,9 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md mx-4 card p-6">
-        <h2 className="text-xl font-semibold mb-1">
-          {isEvent ? 'Create New Event' : 'Create New Case'}
-        </h2>
+        <h2 className="text-xl font-semibold mb-1">Create New Case</h2>
         <p className="text-xs text-zinc-500 mb-4">
-          {isEvent
-            ? 'Events are dated containers. Sources added to an event can record a stance.'
-            : 'Cases are undated containers for general investigation work.'}
+          Cases are containers for sources and notes. Optionally add a date and time.
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -66,38 +56,36 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="input"
-              placeholder={isEvent ? 'What happened?' : 'Enter case title'}
+              placeholder="Enter case title"
               autoFocus
               required
             />
           </div>
 
-          {isEvent && (
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Date</label>
-                <input
-                  type="date"
-                  value={eventDate}
-                  onChange={(e) => setEventDate(e.target.value)}
-                  className="input"
-                />
-                <p className="text-[11px] text-zinc-500 mt-1">Optional — leave blank if unknown</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Time</label>
-                <TimeInput
-                  date={eventDate}
-                  time={eventTime}
-                  onChange={setEventTime}
-                  onValidityChange={setTimeValid}
-                  disabled={!eventDate}
-                  ariaLabel="Event time (24-hour, local)"
-                />
-                {!eventTime && <p className="text-[11px] text-zinc-500 mt-1">Optional</p>}
-              </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Date</label>
+              <input
+                type="date"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+                className="input"
+              />
+              <p className="text-[11px] text-zinc-500 mt-1">Optional — leave blank if unknown</p>
             </div>
-          )}
+            <div>
+              <label className="block text-sm font-medium mb-1">Time</label>
+              <TimeInput
+                date={eventDate}
+                time={eventTime}
+                onChange={setEventTime}
+                onValidityChange={setTimeValid}
+                disabled={!eventDate}
+                ariaLabel="Case time (24-hour, local)"
+              />
+              {!eventTime && <p className="text-[11px] text-zinc-500 mt-1">Optional</p>}
+            </div>
+          </div>
 
           <div className="mb-6">
             <label className="block text-sm font-medium mb-1">Description</label>
@@ -117,7 +105,7 @@ export function NewContainerModal({ kind, onClose, onSubmit }: NewContainerModal
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={submitting || !title.trim() || !timeValid}>
-              {submitting ? 'Creating…' : isEvent ? 'Create Event' : 'Create Case'}
+              {submitting ? 'Creating…' : 'Create Case'}
             </button>
           </div>
         </form>

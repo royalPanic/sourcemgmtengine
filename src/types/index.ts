@@ -1,4 +1,4 @@
-export type ContainerKind = 'case' | 'event';
+export type ContainerKind = 'case';
 
 /** How a source bears on the event it belongs to. `null` = none / not applicable. */
 export type Stance = 'supports' | 'refutes' | 'neutral';
@@ -8,7 +8,7 @@ export interface Case {
   title: string;
   description: string | null;
   kind: ContainerKind;
-  /** Calendar date, `YYYY-MM-DD`. Only set for events. */
+  /** Calendar date, `YYYY-MM-DD`. Optional for any case. */
   event_date: string | null;
   /** Wall-clock time, `HH:MM`. Optional even for events. */
   event_time: string | null;

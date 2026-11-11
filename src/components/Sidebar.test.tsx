@@ -14,11 +14,11 @@ const mockCase: Case = {
   updated_at: '2026-01-01T00:00:00Z',
 };
 
-const mockEvent: Case = {
-  id: 'event-1',
-  title: 'Test Event',
-  description: 'An event',
-  kind: 'event',
+const mockCaseWithDate: Case = {
+  id: 'case-2',
+  title: 'Test Case with Date',
+  description: 'A case with date/time',
+  kind: 'case',
   event_date: '2026-05-01',
   event_time: '19:30',
   created_at: '2026-01-01T00:00:00Z',
@@ -46,7 +46,6 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     expect(screen.getByText(/OSINT Case Manager/)).toBeInTheDocument();
@@ -63,15 +62,14 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     expect(screen.getByText('Test Case')).toBeInTheDocument();
   });
 
-  it('renders event list items', () => {
+  it('renders case with date/time', () => {
     render(<Sidebar
-      cases={[mockEvent]}
+      cases={[mockCaseWithDate]}
       loading={false}
       selectedCaseId={null}
       metaSourcesActive={false}
@@ -80,10 +78,10 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
-    expect(screen.getByText('Test Event')).toBeInTheDocument();
+    expect(screen.getByText('Test Case with Date')).toBeInTheDocument();
+    expect(screen.getByText('May 1, 2026 · 19:30')).toBeInTheDocument();
   });
 
   it('calls onSelectCase when clicking a case', () => {
@@ -98,7 +96,6 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     fireEvent.click(screen.getByText('Test Case'));
@@ -117,30 +114,10 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={onCreateCase}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     fireEvent.click(screen.getByText(/New Case/));
     expect(onCreateCase).toHaveBeenCalled();
-  });
-
-  it('calls onCreateEvent when clicking New Event', () => {
-    const onCreateEvent = vi.fn();
-    render(<Sidebar
-      cases={[]}
-      loading={false}
-      selectedCaseId={null}
-      metaSourcesActive={false}
-      entitiesActive={false}
-      onSelectCase={vi.fn()}
-      onOpenMetaSources={vi.fn()}
-      onOpenEntities={vi.fn()}
-      onCreateCase={vi.fn()}
-      onCreateEvent={onCreateEvent}
-      onDeleteCase={vi.fn()}
-    />);
-    fireEvent.click(screen.getByText(/New Event/));
-    expect(onCreateEvent).toHaveBeenCalled();
   });
 
   it('filters cases by search query', () => {
@@ -155,11 +132,10 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     
-    const searchInput = screen.getByPlaceholderText(/Search cases and events/);
+    const searchInput = screen.getByPlaceholderText(/Search cases/);
     fireEvent.change(searchInput, { target: { value: 'Other' } });
     
     expect(screen.getByText('Other Case')).toBeInTheDocument();
@@ -177,7 +153,6 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={vi.fn()}
     />);
     expect(screen.getByText(/Nothing found/)).toBeInTheDocument();
@@ -197,7 +172,6 @@ describe('Sidebar', () => {
       onOpenMetaSources={vi.fn()}
       onOpenEntities={vi.fn()}
       onCreateCase={vi.fn()}
-      onCreateEvent={vi.fn()}
       onDeleteCase={onDeleteCase}
     />);
     

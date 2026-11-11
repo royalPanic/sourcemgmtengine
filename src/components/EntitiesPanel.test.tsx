@@ -48,13 +48,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     expect(screen.getByText(/Entities \(2\)/)).toBeInTheDocument();
@@ -69,13 +63,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={true}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     expect(container.querySelector('svg')).toBeInTheDocument();
@@ -88,13 +76,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     expect(screen.getByText(/No entities yet/)).toBeInTheDocument();
@@ -107,13 +89,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     expect(screen.getByText(/Global \(1\)/)).toBeInTheDocument();
@@ -127,13 +103,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     const newEntityButtons = screen.getAllByText(/New Entity/);
@@ -148,13 +118,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     fireEvent.click(screen.getByText(/Types/));
@@ -169,13 +133,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={onOpenEntityDetail}
     />);
     fireEvent.click(screen.getByText('John Doe'));
@@ -190,13 +148,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={onDeleteEntity}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     const entityItem = screen.getByText('John Doe').closest('div')!;
@@ -213,13 +165,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={onCreateEntity}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
@@ -246,13 +192,7 @@ describe('EntitiesPanel', () => {
       entityTypes={mockTypes}
       loading={false}
       onCreateEntity={onCreateEntity}
-      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
-      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
-      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
-      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
-      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={vi.fn()}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
@@ -265,3 +205,4 @@ describe('EntitiesPanel', () => {
     expect(screen.getByText(/Creation failed/)).toBeInTheDocument();
   });
 });
+

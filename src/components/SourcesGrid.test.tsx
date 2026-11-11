@@ -66,7 +66,6 @@ describe('SourcesGrid', () => {
     const { container } = render(<SourcesGrid
       sources={[]}
       loading={true}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -84,7 +83,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={[]}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -103,7 +101,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -122,7 +119,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -139,12 +135,11 @@ describe('SourcesGrid', () => {
     expect(onOpenDetail).toHaveBeenCalledWith(sources[0]);
   });
 
-  it('shows stance column for events', () => {
+  it('shows stance column', () => {
     const sources = [source('supports')];
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={true}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -157,12 +152,11 @@ describe('SourcesGrid', () => {
     expect(screen.getByText(/Supports/)).toBeInTheDocument();
   });
 
-  it('hides stance column for cases', () => {
+  it('shows stance column', () => {
     const sources = [source('supports')];
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -172,8 +166,7 @@ describe('SourcesGrid', () => {
       onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
-    // No stance column header for cases
-    expect(screen.queryByText(/Stance/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Supports/)).toBeInTheDocument();
   });
 
   it('calls onDeleteSource when deleting', () => {
@@ -184,7 +177,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -203,7 +195,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={[]}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -223,7 +214,6 @@ describe('SourcesGrid', () => {
     render(<SourcesGrid
       sources={sources}
       loading={false}
-      isEvent={false}
       metaSources={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
       onUpdateSource={vi.fn().mockResolvedValue(undefined)}
@@ -240,3 +230,4 @@ describe('SourcesGrid', () => {
     expect(attachmentCell).toBeInTheDocument();
   });
 });
+

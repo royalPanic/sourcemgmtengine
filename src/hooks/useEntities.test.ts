@@ -230,7 +230,7 @@ describe('useEntityQualities', () => {
 
   it('creates a quality and appends it', async () => {
     const created = { ...mockQuality, id: 'quality-new' };
-    mockQualitiesApi.getAll.mockResolvedValue([mockQuality]);
+    mockQualitiesApi.getAll.mockResolvedValue([mockQuality, created]);
     mockQualitiesApi.create.mockResolvedValue(created);
 
     const { result } = renderHook(() => useEntityQualities('entity-1'));
@@ -264,7 +264,7 @@ describe('useEntityQualities', () => {
 
   it('updates a quality in place', async () => {
     const updated = { ...mockQuality, value_string: 'British' };
-    mockQualitiesApi.getAll.mockResolvedValue([mockQuality]);
+    mockQualitiesApi.getAll.mockResolvedValue([updated]);
     mockQualitiesApi.update.mockResolvedValue(updated);
 
     const { result } = renderHook(() => useEntityQualities('entity-1'));
@@ -291,7 +291,7 @@ describe('useEntityQualities', () => {
   });
 
   it('deletes a quality from the list', async () => {
-    mockQualitiesApi.getAll.mockResolvedValue([mockQuality]);
+    mockQualitiesApi.getAll.mockResolvedValue([]);
     mockQualitiesApi.delete.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useEntityQualities('entity-1'));

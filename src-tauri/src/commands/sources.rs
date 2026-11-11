@@ -90,29 +90,18 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
     Ok(Some(SourceWithAttachments { source, attachments, reference }))
 }
 
-/// A stance only makes sense on an event. Sources on plain cases must leave it
-/// unset, so this rejects the combination rather than silently storing it.
+/// A stance is allowed on any case, since all cases can optionally carry a
+/// date/time. Only `None` (no stance) is always valid.
 async fn validate_stance(
-    app: &AppHandle,
-    case_id: &str,
+    _app: &AppHandle,
+    _case_id: &str,
     stance: &Option<Stance>,
 ) -> Result<(), String> {
     if stance.is_none() {
         return Ok(());
     }
 
-    let pool = pool::pool(app).await?;
-    let kind: Option<String> = sqlx::query_scalar("SELECT kind FROM cases WHERE id = ?")
-        .bind(case_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| format!("Failed to look up container kind: {}", e))?;
-
-    match kind.as_deref() {
-        Some("event") => Ok(()),
-        Some(_) => Err("Stance can only be set on sources belonging to an event".to_string()),
-        None => Err("Container not found".to_string()),
-    }
+    Ok(())
 }
 
 /// Rejects a source date/time pair that does not match the expected shape, so

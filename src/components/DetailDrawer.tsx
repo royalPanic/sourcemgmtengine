@@ -29,7 +29,6 @@ interface DetailDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   source: SourceWithAttachments | null;
-  isEvent: boolean;
   /** Sibling sources in the same container, for the reference dropdown. */
   siblings: SourceWithAttachments[];
   metaSources: MetaSourceSummary[];
@@ -61,7 +60,6 @@ export function DetailDrawer({
   isOpen,
   onClose,
   source,
-  isEvent,
   siblings,
   metaSources,
   onUpdate,
@@ -213,7 +211,7 @@ export function DetailDrawer({
         credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
         // A source that duplicates another capture carries no stance; the
         // backend enforces this too. Meta-referenced sources keep theirs.
-        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
+        stance: !isReferenced && stance ? (stance as Stance) : undefined,
         ...referenceIds(reference),
         // Empty strings clear the stored values.
         sourceDate,
@@ -442,9 +440,8 @@ export function DetailDrawer({
             </div>
           </section>
 
-          {isEvent && (
-            <section className="card p-4">
-              <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance on Event</h3>
+          <section className="card p-4">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance</h3>
               <select
                 value={locksStance(reference) ? '' : stance}
                 onChange={(e) => setStance(e.target.value)}
@@ -476,7 +473,6 @@ export function DetailDrawer({
                 </p>
               )}
             </section>
-          )}
 
           <section>
             <div className="flex items-center justify-between mb-2">

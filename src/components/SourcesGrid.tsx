@@ -18,7 +18,6 @@ import {
 interface SourcesGridProps {
   sources: SourceWithAttachments[];
   loading: boolean;
-  isEvent: boolean;
   metaSources: MetaSourceSummary[];
   onCreateSource: (params: {
     title: string;
@@ -58,7 +57,6 @@ interface SourcesGridProps {
 export function SourcesGrid({
   sources,
   loading,
-  isEvent,
   metaSources,
   onCreateSource,
   onDeleteSource,
@@ -108,7 +106,7 @@ export function SourcesGrid({
                 <th className="px-4 py-2 font-medium">Type</th>
                 <th className="px-4 py-2 font-medium">Date</th>
                 <th className="px-4 py-2 font-medium">Admiralty</th>
-                {isEvent && <th className="px-4 py-2 font-medium">Stance</th>}
+                <th className="px-4 py-2 font-medium">Stance</th>
                 <th className="px-4 py-2 font-medium">Attachments</th>
                 <th className="px-4 py-2 font-medium">Updated</th>
                 <th className="px-4 py-2" />
@@ -181,11 +179,9 @@ export function SourcesGrid({
                       )}
                     </div>
                   </td>
-                  {isEvent && (
-                    <td className="px-4 py-3">
-                      <StanceBadge stance={source.stance} />
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <StanceBadge stance={source.stance} />
+                  </td>
                   <td className="px-4 py-3 text-zinc-400">{source.attachments.length}</td>
                   <td className="px-4 py-3 text-zinc-500 text-xs">{formatDate(source.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
@@ -214,7 +210,6 @@ export function SourcesGrid({
 
       {showNewSource && (
         <NewSourceModal
-          isEvent={isEvent}
           siblings={sources}
           metaSources={metaSources}
           onClose={() => setShowNewSource(false)}
@@ -247,13 +242,11 @@ export function StanceBadge({ stance }: { stance: Stance | null }) {
 }
 
 function NewSourceModal({
-  isEvent,
   siblings,
   metaSources,
   onClose,
   onSubmit,
 }: {
-  isEvent: boolean;
   siblings: SourceWithAttachments[];
   metaSources: MetaSourceSummary[];
   onClose: () => void;
@@ -301,7 +294,7 @@ function NewSourceModal({
         credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
         // A source that duplicates another capture carries no stance; the
         // backend enforces this too. Meta-referenced sources keep theirs.
-        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
+        stance: !isReferenced && stance ? (stance as Stance) : undefined,
         ...referenceIds(reference),
         sourceDate: sourceDate || undefined,
         sourceTime: sourceDate && sourceTime ? sourceTime : undefined,
@@ -430,38 +423,36 @@ function NewSourceModal({
             </div>
           </div>
 
-          {isEvent && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Stance on Event</label>
-              <select
-                value={locksStance(reference) ? '' : stance}
-                onChange={(e) => setStance(e.target.value)}
-                className="select"
-                disabled={locksStance(reference)}
-                title={
-                  locksStance(reference)
-                    ? 'A source that duplicates another capture carries no stance'
-                    : undefined
-                }
-              >
-                <option value="">{STANCE_NONE_LABEL}</option>
-                {STANCES.map(value => (
-                  <option key={value} value={value} title={STANCE_DEFINITIONS[value].description}>
-                    {STANCE_DEFINITIONS[value].label}
-                  </option>
-                ))}
-              </select>
-              {locksStance(reference) ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Locked to none: this duplicates another capture.
-                </p>
-              ) : stance ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  {STANCE_DEFINITIONS[stance as Stance].description}
-                </p>
-              ) : null}
-            </div>
-          )}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Stance</label>
+            <select
+              value={locksStance(reference) ? '' : stance}
+              onChange={(e) => setStance(e.target.value)}
+              className="select"
+              disabled={locksStance(reference)}
+              title={
+                locksStance(reference)
+                  ? 'A source that duplicates another capture carries no stance'
+                  : undefined
+              }
+            >
+              <option value="">{STANCE_NONE_LABEL}</option>
+              {STANCES.map(value => (
+                <option key={value} value={value} title={STANCE_DEFINITIONS[value].description}>
+                  {STANCE_DEFINITIONS[value].label}
+                </option>
+              ))}
+            </select>
+            {locksStance(reference) ? (
+              <p className="mt-2 text-xs text-zinc-500">
+                Locked to none: this duplicates another capture.
+              </p>
+            ) : stance ? (
+              <p className="mt-2 text-xs text-zinc-500">
+                {STANCE_DEFINITIONS[stance as Stance].description}
+              </p>
+            ) : null}
+          </div>
 
           {error && <p className="mb-4 text-xs text-red-400">{error}</p>}
 

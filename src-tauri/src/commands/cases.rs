@@ -55,7 +55,6 @@ async fn fetch_case_note(app: &AppHandle, case_id: &str) -> Result<Option<CaseNo
 /// Rejects a date/time pair that does not match the expected shape, so bad
 /// input never reaches the database.
 fn validate_event_fields(
-    kind: &ContainerKind,
     event_date: &Option<String>,
     event_time: &Option<String>,
 ) -> Result<(), String> {
@@ -71,14 +70,6 @@ fn validate_event_fields(
         }
     }
 
-    if *kind == ContainerKind::Case {
-        if event_date.as_deref().is_some_and(|d| !d.is_empty())
-            || event_time.as_deref().is_some_and(|t| !t.is_empty())
-        {
-            return Err("Only events can have a date or time".to_string());
-        }
-    }
-
     Ok(())
 }
 
@@ -87,19 +78,17 @@ pub async fn create_case(
     app: AppHandle,
     title: String,
     description: Option<String>,
-    kind: Option<ContainerKind>,
     event_date: Option<String>,
     event_time: Option<String>,
 ) -> Result<Case, String> {
-    let kind = kind.unwrap_or(ContainerKind::Case);
-    // An event may be created before its date is known, so both fields are
-    // optional. Empty strings are normalised to NULL.
+    // All cases can optionally carry a date/time. Empty strings are normalised
+    // to NULL.
     let event_date = event_date.filter(|d| !d.trim().is_empty());
     let event_time = event_time.filter(|t| !t.trim().is_empty());
-    validate_event_fields(&kind, &event_date, &event_time)?;
+    validate_event_fields(&event_date, &event_time)?;
 
     let pool = pool::pool(&app).await?;
-    let case = Case::new(title, description, kind, event_date, event_time);
+    let case = Case::new(title, description, ContainerKind::Case, event_date, event_time);
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
@@ -181,7 +170,7 @@ pub async fn update_case(
         Some(patch) => patch.clone(),
         None => existing.event_time.clone(),
     };
-    validate_event_fields(&existing.kind, &effective_date, &effective_time)?;
+    validate_event_fields(&effective_date, &effective_time)?;
 
     let mut updates: Vec<&str> = Vec::new();
     if title.is_some() {

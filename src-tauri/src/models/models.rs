@@ -1,28 +1,20 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A container is either a plain case or a dated event. Events support
-/// everything a case does, plus a user-editable date/time.
+/// A case. All cases can optionally carry a date/time.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ContainerKind {
     Case,
-    Event,
 }
 
 impl ContainerKind {
-    pub fn from_db(value: &str) -> Self {
-        match value {
-            "event" => ContainerKind::Event,
-            _ => ContainerKind::Case,
-        }
+    pub fn from_db(_value: &str) -> Self {
+        ContainerKind::Case
     }
 
     pub fn as_db(&self) -> &'static str {
-        match self {
-            ContainerKind::Case => "case",
-            ContainerKind::Event => "event",
-        }
+        "case"
     }
 }
 
