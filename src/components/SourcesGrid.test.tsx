@@ -56,6 +56,7 @@ describe('SourcesGrid', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('confirm', vi.fn(() => true));
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -228,6 +229,84 @@ describe('SourcesGrid', () => {
     // Find the cell in the Attachments column (not the credibility badge)
     const attachmentCell = cells.find(c => c.tagName === 'TD');
     expect(attachmentCell).toBeInTheDocument();
+  });
+
+  describe('sorting', () => {
+    const dated = [
+      source('supports', { id: 'a', title: 'Older', source_date: '2026-01-05' }),
+      source('supports', { id: 'b', title: 'Newer', source_date: '2026-04-20' }),
+      source('supports', { id: 'c', title: 'Undated' }),
+    ];
+
+    function renderGrid(sources: SourceWithAttachments[]) {
+      return render(<SourcesGrid
+        sources={sources}
+        loading={false}
+        entities={[]}
+        onCreateSource={vi.fn().mockResolvedValue(undefined)}
+        onUpdateSource={vi.fn().mockResolvedValue(undefined)}
+        onDeleteSource={vi.fn().mockResolvedValue(undefined)}
+        onImportAttachment={vi.fn().mockResolvedValue(undefined)}
+        onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
+        onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
+        onOpenDetail={vi.fn()}
+      />);
+    }
+
+    function renderedTitles(): string[] {
+      return screen
+        .getAllByRole('row')
+        .slice(1)
+        .map(row => row.querySelector('td')?.textContent ?? '');
+    }
+
+    it('defaults to source date, newest first, with undated sources first', () => {
+      renderGrid(dated);
+      expect(renderedTitles()).toEqual(['Undated', 'Newer', 'Older']);
+    });
+
+    it('flips direction when the Date header is clicked again', () => {
+      renderGrid(dated);
+      const dateHeader = screen.getByRole('button', { name: /Date/ });
+
+      fireEvent.click(dateHeader);
+      expect(renderedTitles()).toEqual(['Undated', 'Older', 'Newer']);
+
+      fireEvent.click(dateHeader);
+      expect(renderedTitles()).toEqual(['Undated', 'Newer', 'Older']);
+    });
+
+    it('sorts by updated_at when the Updated header is clicked', () => {
+      renderGrid([
+        source('supports', { id: 'a', title: 'Stale', updated_at: '2026-01-01T00:00:00Z' }),
+        source('supports', { id: 'b', title: 'Fresh', updated_at: '2026-06-01T00:00:00Z' }),
+      ]);
+
+      fireEvent.click(screen.getByRole('button', { name: /Updated/ }));
+      expect(renderedTitles()).toEqual(['Fresh', 'Stale']);
+    });
+
+    it('exposes the active sort through aria-sort', () => {
+      renderGrid(dated);
+      const dateHeader = screen.getByRole('button', { name: /Date/ }).closest('th');
+      const updatedHeader = screen.getByRole('button', { name: /Updated/ }).closest('th');
+
+      expect(dateHeader).toHaveAttribute('aria-sort', 'descending');
+      expect(updatedHeader).toHaveAttribute('aria-sort', 'none');
+
+      fireEvent.click(screen.getByRole('button', { name: /Updated/ }));
+      expect(dateHeader).toHaveAttribute('aria-sort', 'none');
+      expect(updatedHeader).toHaveAttribute('aria-sort', 'descending');
+    });
+
+    it('remembers the chosen sort', () => {
+      const { unmount } = renderGrid(dated);
+      fireEvent.click(screen.getByRole('button', { name: /Date/ }));
+      unmount();
+
+      renderGrid(dated);
+      expect(renderedTitles()).toEqual(['Undated', 'Older', 'Newer']);
+    });
   });
 });
 

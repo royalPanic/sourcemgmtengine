@@ -1,9 +1,17 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
 import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
 import { formatEventDate } from './Sidebar';
 import { formatUtc } from '../utils/datetime';
+import {
+  compareSources,
+  loadSourceSort,
+  nextSort,
+  saveSourceSort,
+  type SourceSort,
+  type SourceSortField,
+} from '../utils/sourceSort';
 import {
   SOURCE_TYPES,
   RELIABILITY_CODES,
@@ -63,6 +71,18 @@ export function SourcesGrid({
   onOpenDetail,
 }: SourcesGridProps) {
   const [showNewSource, setShowNewSource] = useState(false);
+  const [sort, setSort] = useState<SourceSort>(loadSourceSort);
+
+  const sortedSources = useMemo(
+    () => [...sources].sort((a, b) => compareSources(a, b, sort)),
+    [sources, sort]
+  );
+
+  const changeSort = (field: SourceSortField) => {
+    const next = nextSort(sort, field);
+    setSort(next);
+    saveSourceSort(next);
+  };
 
   if (loading) {
     return (
@@ -104,16 +124,28 @@ export function SourcesGrid({
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Type</th>
-                <th className="px-4 py-2 font-medium">Date</th>
+                <SortableHeader
+                  label="Date"
+                  field="source_date"
+                  sort={sort}
+                  onSort={changeSort}
+                  title="Sort by the source's own date and time"
+                />
                 <th className="px-4 py-2 font-medium">Admiralty</th>
                 <th className="px-4 py-2 font-medium">Stance</th>
                 <th className="px-4 py-2 font-medium">Attachments</th>
-                <th className="px-4 py-2 font-medium">Updated</th>
+                <SortableHeader
+                  label="Updated"
+                  field="updated_at"
+                  sort={sort}
+                  onSort={changeSort}
+                  title="Sort by when the source record was last edited"
+                />
                 <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody>
-              {sources.map(source => (
+              {sortedSources.map(source => (
                 <tr
                   key={source.id}
                   className="border-b border-zinc-800/60 hover:bg-zinc-800/30 cursor-pointer"
@@ -220,6 +252,50 @@ export function SourcesGrid({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A column header that sorts the grid.
+ *
+ * The button fills the cell so the whole header is clickable, and `aria-sort`
+ * on the `th` tells assistive tech which column is active.
+ */
+function SortableHeader({
+  label,
+  field,
+  sort,
+  onSort,
+  title,
+}: {
+  label: string;
+  field: SourceSortField;
+  sort: SourceSort;
+  onSort: (field: SourceSortField) => void;
+  title: string;
+}) {
+  const active = sort.field === field;
+  const ascending = sort.direction === 'asc';
+
+  return (
+    <th
+      className="px-4 py-2 font-medium"
+      aria-sort={active ? (ascending ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className={`flex w-full items-center gap-1 uppercase tracking-wide transition-colors hover:text-zinc-200 ${
+          active ? 'text-amber-400' : ''
+        }`}
+        onClick={() => onSort(field)}
+        title={`${title} (${active && ascending ? 'oldest first' : 'newest first'})`}
+      >
+        {label}
+        <span aria-hidden="true" className={active ? '' : 'opacity-30'}>
+          {active && ascending ? '▲' : '▼'}
+        </span>
+      </button>
+    </th>
   );
 }
 

@@ -14,6 +14,7 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 - **Case dashboard** — per-stance Admiralty averages, a stance distribution, a map of geolocated sources, and a breakdown table.
 - **Geolocation** — a source can carry coordinates (decimal, DMS, UTM, or MGRS) and a place name, stored in `custom_metadata`.
 - **Structured source evaluation** — every source carries a type, URL, captured raw text, and a NATO Admiralty rating.
+- **Sortable source timeline** — click the **Date** or **Updated** column header to reorder the source grid, and click again to flip between newest-first and oldest-first. Sources with no date stay at the top in either direction, so an undated capture is never buried at the bottom of the list. The chosen sort is remembered locally between sessions.
 - **NATO Admiralty System** — Source Reliability (A–F) and Information Credibility (1–6), each with an inline definition drawn from NATO STANAG 2064 conventions.
 - **Evidence attachments** — attach files to a source, open them in the system default application, or delete them. Files are stored under a per-source folder using relative paths so the workspace stays portable.
 - **OpenTimestamps proofs** — every attachment can be cryptographically timestamped against the Bitcoin blockchain via public OpenTimestamps calendars, so its existence before a point in time is provable without trusting this application. Proofs are verified against real block headers, and an unverifiable proof never reports as confirmed.
