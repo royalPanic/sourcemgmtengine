@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
+import { ReferenceSelect, locksStance, referenceIds, referenceRating, referenceSupplies, type ReferenceSelection } from './ReferenceSelect';
 import { formatEventDate } from './Sidebar';
 import { formatUtc } from '../utils/datetime';
 import {
@@ -455,12 +455,18 @@ function NewSourceModal({
               disabled={submitting}
               onChange={(next) => {
                 setReference(next);
-                // Mirror the reference's rating as the default.
+                // Mirror the reference's rating as the default. An entity only
+                // supplies reliability, so credibility stays the operator's.
                 const rating = referenceRating(next, siblings, entities);
-                setReliabilityCode(rating?.reliability_code ?? '');
-                setCredibilityCode(
-                  rating?.credibility_code ? String(rating.credibility_code) : ''
-                );
+                const supplies = referenceSupplies(next);
+                if (supplies.reliability) {
+                  setReliabilityCode(rating?.reliability_code ?? '');
+                }
+                if (supplies.credibility) {
+                  setCredibilityCode(
+                    rating?.credibility_code ? String(rating.credibility_code) : ''
+                  );
+                }
                 if (locksStance(next)) setStance('');
               }}
             />

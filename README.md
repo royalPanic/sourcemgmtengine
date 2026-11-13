@@ -316,7 +316,7 @@ The two rows differ because they mean different things. Citing a sibling source 
 
 Two rules follow from the intent of the feature and are enforced in the backend, not just the UI:
 
-1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the entity's Reliability quality pushes the new rating down every citation, including citations of citations.
+1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the entity's Reliability quality pushes the new rating down every citation, including citations of citations. A *source* reference supplies both codes; an *entity* reference supplies reliability only, so the citing source keeps its own credibility.
 2. **A source that cites another source carries no stance.** Ten outlets repeating one core capture must not read as ten independent corroborations, so the stance is forced to none, the control is disabled, and the source is excluded from every case dashboard statistic.
 
 Cycles (`A → B → A`) and cross-container references are rejected. The "at most one reference" rule is additionally enforced by SQLite triggers so it holds for any future writer.

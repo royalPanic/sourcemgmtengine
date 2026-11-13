@@ -172,3 +172,56 @@ describe('DetailDrawer OpenTimestamps controls', () => {
     });
   });
 });
+
+describe('DetailDrawer Admiralty rating', () => {
+  const entity = {
+    id: 'entity-1',
+    entity_type: 'organization',
+    name: 'Reuters',
+    description: null,
+    case_id: null,
+    is_global: true,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  };
+
+  function credibilitySelect(): HTMLSelectElement {
+    return screen.getByLabelText(/Information Credibility/i) as HTMLSelectElement;
+  }
+
+  it('keeps credibility editable on a source that references an entity', async () => {
+    // Regression: saving an entity-referencing source used to drop the
+    // credibility patch, so the value snapped back after reload.
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    renderDrawer({
+      onUpdate,
+      source: { ...source([attachment()]), reference_entity_id: 'entity-1' },
+      entities: [entity],
+    });
+
+    expect(credibilitySelect()).not.toBeDisabled();
+
+    fireEvent.change(credibilitySelect(), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Save/ }));
+
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(
+        'source-1',
+        expect.objectContaining({ credibilityCode: 4 })
+      );
+    });
+  });
+
+  it('does not clear credibility when an entity reference is selected', async () => {
+    renderDrawer({
+      source: { ...source([attachment()]), credibility_code: 3 },
+      entities: [entity],
+    });
+
+    fireEvent.change(screen.getByLabelText(/Reference/i), {
+      target: { value: 'entity:entity-1' },
+    });
+
+    expect(credibilitySelect().value).toBe('3');
+  });
+});

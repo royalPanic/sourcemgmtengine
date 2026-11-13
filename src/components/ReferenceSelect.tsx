@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Entity, SourceReference, SourceWithAttachments } from '../types';
 
 /**
@@ -67,6 +68,23 @@ function parseOptionValue(value: string): ReferenceSelection {
   return { kind, id };
 }
 
+/**
+ * Which rating fields a reference supplies, mirroring the backend rule.
+ *
+ * A source reference duplicates one capture, so it supplies both codes. An
+ * entity reference supplies only reliability — credibility is this source's own
+ * assessment of this information, so the operator's value must survive.
+ */
+export function referenceSupplies(selection: ReferenceSelection): {
+  reliability: boolean;
+  credibility: boolean;
+} {
+  return {
+    reliability: selection.kind !== 'none',
+    credibility: selection.kind === 'source',
+  };
+}
+
 /** The rating a reference currently carries, for seeding the fields. */
 export function referenceRating(
   selection: ReferenceSelection,
@@ -127,11 +145,17 @@ export function ReferenceSelect({
   const hasSiblings = siblings.length > 0;
   const hasEntities = entities.length > 0;
   const hasOptions = hasSiblings || hasEntities;
+  // The drawer and the new-source modal can both be mounted, so the label needs
+  // an id unique to this instance.
+  const selectId = useId();
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">Reference Source</label>
+      <label htmlFor={selectId} className="block text-sm font-medium mb-1">
+        Reference Source
+      </label>
       <select
+        id={selectId}
         value={optionValue(value)}
         onChange={(e) => onChange(parseOptionValue(e.target.value))}
         className="select"

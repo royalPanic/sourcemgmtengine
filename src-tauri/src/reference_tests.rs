@@ -11,8 +11,8 @@
 #[cfg(test)]
 mod tests {
     use crate::commands::references::{
-        propagate_entity_rating, propagate_rating, reference_rating, resolve_reference,
-        validate_reference, ReferenceError, ReferenceInput,
+        inherited_rating, propagate_entity_rating, propagate_rating, reference_rating,
+        resolve_reference, validate_reference, InheritedRating, ReferenceError, ReferenceInput,
     };
     use crate::models::models::ReferenceKind;
     use sqlx::sqlite::SqlitePoolOptions;
@@ -445,5 +445,101 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(resolve_reference(&pool, None, None).await.unwrap().is_none());
+    }
+
+    // --- inherited rating -------------------------------------------------
+
+    #[tokio::test]
+    async fn an_entity_reference_supplies_reliability_but_never_credibility() {
+        // Credibility is the citing source's own assessment of this piece of
+        // information, so an entity reference must not claim it. Reporting
+        // `None` here is what lets the update path keep the operator's value.
+        let pool = pool().await;
+        insert_entity(&pool, "m1", "Reuters").await;
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'm1', 'Reliability', 'reliability', 'B')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let inherited = inherited_rating(&pool, &entity_ref("m1")).await.unwrap();
+
+        assert_eq!(inherited.reliability, Some(Some("B".to_string())));
+        assert_eq!(
+            inherited.credibility, None,
+            "credibility must stay the source's own"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_entity_without_a_reliability_quality_clears_the_code() {
+        let pool = pool().await;
+        insert_entity(&pool, "m1", "Reuters").await;
+
+        let inherited = inherited_rating(&pool, &entity_ref("m1")).await.unwrap();
+
+        assert_eq!(inherited.reliability, Some(None));
+        assert_eq!(inherited.credibility, None);
+    }
+
+    #[tokio::test]
+    async fn a_source_reference_supplies_both_codes() {
+        let pool = pool().await;
+        insert_source(&pool, "core", "case-1", Some("A"), Some(2), None).await;
+
+        let inherited = inherited_rating(&pool, &source_ref("core")).await.unwrap();
+
+        assert_eq!(inherited.reliability, Some(Some("A".to_string())));
+        assert_eq!(inherited.credibility, Some(Some(2)));
+    }
+
+    #[tokio::test]
+    async fn no_reference_supplies_nothing() {
+        let pool = pool().await;
+
+        let inherited = inherited_rating(&pool, &ReferenceInput::default())
+            .await
+            .unwrap();
+
+        assert_eq!(inherited, InheritedRating::default());
+    }
+
+    // --- applying an inherited rating -------------------------------------
+
+    #[test]
+    fn an_entity_reference_keeps_the_patched_credibility() {
+        // The regression: saving an entity-referencing source used to drop the
+        // credibility patch, so the operator's value reverted on reload.
+        let inherited = InheritedRating {
+            reliability: Some(Some("B".to_string())),
+            credibility: None,
+        };
+
+        let (reliability, credibility) =
+            inherited.apply_to(Some(Some("F".to_string())), Some(Some(4)));
+
+        assert_eq!(reliability, Some(Some("B".to_string())), "entity wins reliability");
+        assert_eq!(credibility, Some(Some(4)), "the patched credibility survives");
+    }
+
+    #[test]
+    fn a_source_reference_overrides_both_patched_codes() {
+        let inherited = InheritedRating {
+            reliability: Some(Some("A".to_string())),
+            credibility: Some(Some(1)),
+        };
+
+        let (reliability, credibility) =
+            inherited.apply_to(Some(Some("F".to_string())), Some(Some(4)));
+
+        assert_eq!(reliability, Some(Some("A".to_string())));
+        assert_eq!(credibility, Some(Some(1)));
+    }
+
+    #[test]
+    fn an_omitted_patch_stays_omitted_when_the_reference_supplies_nothing() {
+        let (reliability, credibility) = InheritedRating::default().apply_to(None, None);
+
+        assert_eq!(reliability, None);
+        assert_eq!(credibility, None);
     }
 }

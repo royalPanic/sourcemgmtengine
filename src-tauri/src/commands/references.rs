@@ -203,6 +203,78 @@ pub async fn reference_rating(
     Ok((None, None))
 }
 
+/// Reads an entity's Admiralty reliability code (A-F) from its Reliability
+/// quality, if it has one.
+pub async fn entity_reliability(
+    pool: &SqlitePool,
+    entity_id: &str,
+) -> Result<Option<String>, String> {
+    sqlx::query_scalar(
+        "SELECT value_string FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability'",
+    )
+    .bind(entity_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to read entity reliability: {}", e))
+}
+
+/// The rating a citing source inherits from its reference.
+///
+/// Each field is a patch, using the same contract as the rest of the update
+/// path: `None` leaves the source's own value alone, `Some(None)` clears it,
+/// and `Some(Some(v))` sets it.
+///
+/// A **source** reference duplicates one capture, so both codes mirror it. An
+/// **entity** reference only supplies reliability — that is a property of the
+/// actor — while credibility stays the citing source's own assessment of this
+/// particular information. Overwriting credibility here would silently discard
+/// what the operator entered.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct InheritedRating {
+    pub reliability: Option<Option<String>>,
+    pub credibility: Option<Option<i32>>,
+}
+
+/// Resolves what a reference contributes to a citing source's rating.
+pub async fn inherited_rating(
+    pool: &SqlitePool,
+    input: &ReferenceInput,
+) -> Result<InheritedRating, String> {
+    if let Some(entity_id) = &input.entity_id {
+        return Ok(InheritedRating {
+            reliability: Some(entity_reliability(pool, entity_id).await?),
+            credibility: None,
+        });
+    }
+
+    if input.source_id.is_some() {
+        let (reliability, credibility) = reference_rating(pool, input).await?;
+        return Ok(InheritedRating {
+            reliability: Some(reliability),
+            credibility: Some(credibility),
+        });
+    }
+
+    Ok(InheritedRating::default())
+}
+
+impl InheritedRating {
+    /// Applies this inheritance over a patched rating.
+    ///
+    /// A field the reference does not supply keeps whatever the caller patched,
+    /// which is what lets an entity-referencing source keep its own credibility.
+    pub fn apply_to(
+        self,
+        reliability: Option<Option<String>>,
+        credibility: Option<Option<i32>>,
+    ) -> (Option<Option<String>>, Option<Option<i32>>) {
+        (
+            self.reliability.or(reliability),
+            self.credibility.or(credibility),
+        )
+    }
+}
+
 /// Resolves stored reference ids into a labelled reference for the UI.
 pub async fn resolve_reference(
     pool: &SqlitePool,

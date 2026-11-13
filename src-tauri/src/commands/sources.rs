@@ -9,9 +9,8 @@ use crate::validation::{
     is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
     validate_reliability_patch,
 };
-use crate::commands::entities::get_entity_reliability;
 use crate::commands::references::{
-    propagate_rating, reference_rating, resolve_reference, validate_reference, ReferenceInput,
+    inherited_rating, propagate_rating, resolve_reference, validate_reference, ReferenceInput,
 };
 
 const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at";
@@ -189,13 +188,13 @@ pub async fn create_source(
             .await
             .map_err(|e| e.message().to_string())?;
 
-        // If the reference is an entity, inherit its reliability quality.
-        if let Some(entity_id) = &reference.entity_id {
-            let entity_reliability = get_entity_reliability(&app, entity_id).await?;
-            source.reliability_code = entity_reliability;
-        } else {
-            let (reliability, credibility) = reference_rating(&pool, &reference).await?;
+        // A source reference supplies both codes; an entity reference supplies
+        // only reliability, leaving credibility to this source's own assessment.
+        let inherited = inherited_rating(&pool, &reference).await?;
+        if let Some(reliability) = inherited.reliability {
             source.reliability_code = reliability;
+        }
+        if let Some(credibility) = inherited.credibility {
             source.credibility_code = credibility;
         }
 
@@ -342,18 +341,14 @@ pub async fn update_source(
             .await
             .map_err(|e| e.message().to_string())?;
 
-        // Live sync: the citing source always mirrors its reference. A report
-        // of a statement does not change the reliability of the source or the
-        // credibility of the information, so any supplied rating is ignored.
-        if let Some(entity_id) = &next_reference.entity_id {
-            let entity_reliability = get_entity_reliability(&app, entity_id).await?;
-            reliability_code = Some(entity_reliability);
-            credibility_code = None;
-        } else {
-            let (reliability, credibility) = reference_rating(&pool, &next_reference).await?;
-            reliability_code = Some(reliability);
-            credibility_code = Some(credibility);
-        }
+        // Live sync: the citing source mirrors what its reference supplies.
+        // A source reference carries both codes, so it overrides whatever was
+        // patched. An entity reference only supplies reliability — credibility
+        // is this source's own assessment of this information, so the patched
+        // value must survive.
+        let inherited = inherited_rating(&pool, &next_reference).await?;
+        (reliability_code, credibility_code) =
+            inherited.apply_to(reliability_code, credibility_code);
 
         // Only a reference to another source locks the stance. An entity
         // reference keeps the stance editable.

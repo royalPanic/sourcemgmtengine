@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ReferenceSelect, locksStance, selectionOf, referenceIds, NO_REFERENCE } from './ReferenceSelect';
+import { ReferenceSelect, locksStance, selectionOf, referenceIds, referenceSupplies, NO_REFERENCE } from './ReferenceSelect';
 import type { SourceWithAttachments, Entity } from '../types';
 
 describe('ReferenceSelect pure functions', () => {
@@ -20,6 +20,23 @@ describe('ReferenceSelect pure functions', () => {
     expect(referenceIds({ kind: 'source', id: 's1' })).toEqual({ referenceSourceId: 's1', referenceEntityId: '' });
     expect(referenceIds({ kind: 'entity', id: 'e1' })).toEqual({ referenceSourceId: '', referenceEntityId: 'e1' });
     expect(referenceIds(NO_REFERENCE)).toEqual({ referenceSourceId: '', referenceEntityId: '' });
+  });
+
+  it('referenceSupplies leaves credibility to the source for entity references', () => {
+    // A source reference duplicates one capture, so it supplies both codes.
+    expect(referenceSupplies({ kind: 'source', id: 's1' })).toEqual({
+      reliability: true,
+      credibility: true,
+    });
+    // An entity supplies reliability only; credibility is the source's own.
+    expect(referenceSupplies({ kind: 'entity', id: 'e1' })).toEqual({
+      reliability: true,
+      credibility: false,
+    });
+    expect(referenceSupplies(NO_REFERENCE)).toEqual({
+      reliability: false,
+      credibility: false,
+    });
   });
 });
 

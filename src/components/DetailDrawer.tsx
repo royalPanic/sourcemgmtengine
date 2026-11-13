@@ -13,7 +13,7 @@ import {
 } from '../types';
 import { MediaPreview } from './MediaPreview';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, locksStance, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
+import { ReferenceSelect, locksStance, referenceIds, referenceRating, referenceSupplies, selectionOf, type ReferenceSelection } from './ReferenceSelect';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
@@ -492,11 +492,18 @@ export function DetailDrawer({
                 // Mirror the reference's rating as the default. Live sync means
                 // the backend re-applies it on save anyway, but showing the
                 // value here makes the inheritance visible before committing.
+                // An entity only supplies reliability, so the operator's
+                // credibility assessment is left untouched.
                 const rating = referenceRating(next, siblings, entities);
-                setReliabilityCode(rating?.reliability_code ?? '');
-                setCredibilityCode(
-                  rating?.credibility_code ? String(rating.credibility_code) : ''
-                );
+                const supplies = referenceSupplies(next);
+                if (supplies.reliability) {
+                  setReliabilityCode(rating?.reliability_code ?? '');
+                }
+                if (supplies.credibility) {
+                  setCredibilityCode(
+                    rating?.credibility_code ? String(rating.credibility_code) : ''
+                  );
+                }
                 // Only a duplicate of another capture loses its stance.
                 if (locksStance(next)) setStance('');
               }}
@@ -522,8 +529,15 @@ export function DetailDrawer({
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Information Credibility (1–6)</label>
-              <select value={credibilityCode} onChange={(e) => setCredibilityCode(e.target.value)} className="select">
+              <label htmlFor="source-credibility" className="block text-xs font-medium text-zinc-400 mb-1">
+                Information Credibility (1–6)
+              </label>
+              <select
+                id="source-credibility"
+                value={credibilityCode}
+                onChange={(e) => setCredibilityCode(e.target.value)}
+                className="select"
+              >
                 <option value="">Not rated</option>
                 {CREDIBILITY_CODES.map(code => (
                   <option key={code} value={code}>{CREDIBILITY_DEFINITIONS[code].label}</option>

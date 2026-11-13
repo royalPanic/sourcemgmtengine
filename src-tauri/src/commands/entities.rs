@@ -190,25 +190,6 @@ async fn fetch_quality(app: &AppHandle, id: &str) -> Result<Option<EntityQuality
     Ok(row.map(|row| quality_from_row(row)))
 }
 
-/// Returns the Admiralty reliability code (A-F) for an entity, read from its
-/// quality of type 'reliability'. Returns None if the entity has no such
-/// quality.
-pub async fn get_entity_reliability(
-    app: &AppHandle,
-    entity_id: &str,
-) -> Result<Option<String>, String> {
-    let pool = pool::pool(app).await?;
-    let row: Option<String> = sqlx::query_scalar(
-        "SELECT value_string FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability'",
-    )
-    .bind(entity_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| format!("Failed to read entity reliability: {}", e))?;
-
-    Ok(row)
-}
-
 /// Fetches all source references for a quality, joined with source titles.
 async fn fetch_quality_source_refs(
     pool: &sqlx::SqlitePool,
