@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "node scripts/fetch-yt-dlp.mjs && tauri build",
+    "fetch:yt-dlp": "node scripts/fetch-yt-dlp.mjs",
+    "fetch:yt-dlp": "node scripts/fetch-yt-dlp.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:world-outline": "node scripts/build-world-outline.mjs"

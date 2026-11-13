@@ -39,13 +39,19 @@ function App() {
     getTimestampStatus,
   } = useSources(selectedCaseId);
 
+  // One list serves every view (workspace tabs, source reference picker, and
+  // the Entities panel), so it is always fetched with the container scope and
+  // no `is_global` filter. That returns the global entities *plus* this
+  // container's own entities, which is what all three consumers want. Forcing
+  // `is_global` here would hide case-specific entities from every view except
+  // the panel.
   const {
     entities,
     loading: entitiesLoading,
     createEntity,
     updateEntity,
     deleteEntity,
-  } = useEntities(selectedCaseId, showEntities ? undefined : true);
+  } = useEntities(selectedCaseId);
 
   const { qualities: entityQualities, loadQualities: reloadQualities } = useEntityQualities(selectedEntity?.id ?? null);
 
@@ -100,9 +106,8 @@ function App() {
     isGlobal: boolean;
   }): Promise<void> => {
     await createEntity(params);
-    // If global, refresh the full list; if case-specific, the hook already
-    // filters by caseId.
-    setShowEntities(false);
+    // Stay where the operator was. Switching views on create hid the new
+    // case-specific entity immediately after it was added.
   };
 
   const handleUpdateEntity = async (id: string, params: Partial<{
@@ -228,6 +233,7 @@ function App() {
         {view === 'entities' ? (
           <EntitiesPanel
             selectedCaseId={selectedCaseId}
+            cases={cases}
             entities={entities}
             entityTypes={entityTypes}
             loading={entitiesLoading || entityTypesLoading}
@@ -238,6 +244,7 @@ function App() {
         ) : (
           <MainContent
             container={selectedCase}
+            cases={cases}
             sources={sources}
             sourcesLoading={sourcesLoading}
             entities={entities}
@@ -279,6 +286,7 @@ function App() {
         entity={selectedEntity}
         qualities={entityQualities}
         sources={sources.map(s => ({ id: s.id, title: s.title }))}
+        cases={cases}
         onUpdateEntity={handleUpdateEntity}
         onDeleteEntity={handleDeleteEntity}
         onCreateQuality={handleCreateQuality}

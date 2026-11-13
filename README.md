@@ -16,6 +16,7 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 - **Structured source evaluation** — every source carries a type, URL, captured raw text, and a NATO Admiralty rating.
 - **NATO Admiralty System** — Source Reliability (A–F) and Information Credibility (1–6), each with an inline definition drawn from NATO STANAG 2064 conventions.
 - **Evidence attachments** — attach files to a source, open them in the system default application, or delete them. Files are stored under a per-source folder using relative paths so the workspace stays portable.
+- **OpenTimestamps proofs** — every attachment can be cryptographically timestamped against the Bitcoin blockchain via public OpenTimestamps calendars, so its existence before a point in time is provable without trusting this application. Proofs are verified against real block headers, and an unverifiable proof never reports as confirmed.
 - **Expandable metadata** — arbitrary key/value pairs are stored as JSON in `sources.custom_metadata`, so specialised fields (TLP markings, coordinates, social handles) never require a schema migration.
 - **Entities** — typed, reusable objects (people, organizations, vehicles, nations, governments, etc.) that persist across every case. Entities carry user-defined qualities, including a dedicated **Reliability** quality (A–F).
 - **Workspace tab** — a unified view combining sources, entities, and their relationships for the selected case, replacing separate tabs and panels.
@@ -48,6 +49,36 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 | Platform deps | See [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
 
 On Windows you also need the **WebView2** runtime (preinstalled on Windows 11) and the MSVC build tools.
+
+### Media downloads (yt-dlp)
+
+"Download Media" preserves an image or video from a source's URL as an attachment.
+
+A **direct file link** — a URL ending in an image, video, audio, or `.pdf` extension — is fetched
+with a plain HTTP GET and needs no extra tooling. This covers the common case of an image URL
+copied straight out of a page.
+
+Any other URL is treated as a **web page**. yt-dlp is used for video sites, and if that does not
+produce a file the page's `og:image` / `twitter:image` is downloaded instead — so a link to an
+article or post captures its representative image. If yt-dlp is not installed at all, the image
+path still works.
+
+Release bundles ship yt-dlp as a **sidecar**: `npm run tauri:build` first runs
+`npm run fetch:yt-dlp`, which stages the binary at
+`src-tauri/binaries/yt-dlp-<target-triple>` so Tauri bundles it next to the app.
+
+For development (`npm run tauri:dev`) no sidecar is required — the app looks for a bundled
+sidecar first and then falls back to `yt-dlp` on your `PATH`:
+
+```bash
+pip install yt-dlp        # or: winget install yt-dlp
+```
+
+**ffmpeg is required** when a video site serves video and audio separately, because yt-dlp needs it
+to mux them into one playable file. It must likewise be on `PATH`.
+
+The staged sidecar is a downloaded third-party binary and is git-ignored, so run
+`npm run fetch:yt-dlp` once before your first release build.
 
 On Debian/Ubuntu:
 
@@ -227,6 +258,8 @@ sources            (id, case_id, title, source_type, url, raw_text,
                     created_at, updated_at)
 source_attachments (id, source_id, file_name, relative_path,
                     mime_type, file_size, created_at)
+source_timestamp   (id, source_attachment_id UNIQUE, ots_path, status,
+                    created_at, confirmed_at)
 ```
 
 Migrations are versioned through `tauri-plugin-sql` and tracked in `_sqlx_migrations`. Foreign keys declare `ON DELETE CASCADE`, and the delete commands also remove children explicitly so behaviour does not depend on the connection-level `PRAGMA foreign_keys` setting.
@@ -235,9 +268,41 @@ Reference columns instead use `ON DELETE SET NULL`: deleting a source or entity 
 
 ---
 
+## OpenTimestamps proofs
+
+Every attachment can carry an **OpenTimestamps** proof proving the file existed before a point in time,
+without trusting this application or any third party. Proofs are written next to the attachment as
+`<file>.<ext>.ots` and recorded in `source_timestamp`.
+
+The client is implemented directly in Rust (`src-tauri/src/opentimestamps/`), so the Python `ots` tool is
+not required. The proof container and wire format are consensus-critical and follow
+[`python-opentimestamps`](https://github.com/opentimestamps/python-opentimestamps) exactly; the tests pin
+byte-for-byte against proofs and calendar responses produced by the reference implementation.
+
+**Stamping** hashes the file with SHA-256 and submits the digest to the public OpenTimestamps calendars
+(`POST <calendar>/digest`, raw 32-byte body). Each calendar returns a serialized commitment subtree, which is
+merged into one proof. A freshly stamped proof is `pending`: the calendar holds the commitment but its
+aggregation transaction is not mined yet.
+
+**Verification** asks the calendars named in the proof's pending attestations for an upgrade. Once a
+`BitcoinBlockHeaderAttestation` is available, the attested commitment is checked against the real block header
+fetched from a public block explorer, and the block time is recorded. Only a proof that passes that check
+becomes `confirmed`; anything else stays `pending`, because "the calendar returned HTTP 200" is not proof.
+
+At least one calendar must accept the commitment. A stamping failure is reported to the operator rather than
+silently swallowed.
+
+Downloads are stamped automatically, and a failed automatic stamp never loses the attachment. A proof that
+cannot be parsed — for example one written by an earlier build — is detected and can be replaced by
+re-stamping, so existing evidence is not stranded.
+
+---
+
 ## Entities and source references
 
 An **entity** is a typed, reusable object — a person, organization, vehicle, nation, government, etc. — stored once and citable from any case. Entities carry user-defined qualities, including a dedicated **Reliability** quality (A–F).
+
+A quality's **source provenance is optional**. A quality may cite one or more sources to show where it came from, and the cited sources' Admiralty ratings are averaged for display. Leaving it empty is valid and expected when work happens out of order — for example, recording a reliability assessment before the supporting capture exists. Provenance can be added later from the quality editor.
 
 A source may **reference** exactly one of:
 

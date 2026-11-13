@@ -121,6 +121,38 @@ describe('useEntities', () => {
     expect(result.current.entities).toEqual([mockEntity]);
   });
 
+  it('passes the container id with no global filter for the Entities panel', async () => {
+    mockEntitiesApi.getEntities.mockResolvedValue([mockEntity]);
+
+    // The panel scopes by container so globals and case-specific rows arrive
+    // together; the backend decides what a container view includes.
+    const { result } = renderHook(() => useEntities('case-1', undefined));
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(mockEntitiesApi.getEntities).toHaveBeenCalledWith('case-1', undefined);
+    expect(result.current.entities).toEqual([mockEntity]);
+  });
+
+  it('scopes by container without forcing globals-only', async () => {
+    mockEntitiesApi.getEntities.mockResolvedValue([mockEntity]);
+
+    // App calls the hook with just the container id. Passing `isGlobal = true`
+    // here is what previously hid every case-specific entity from the workspace
+    // tabs and the source reference picker.
+    const { result } = renderHook(() => useEntities('case-1'));
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(mockEntitiesApi.getEntities).toHaveBeenCalledWith('case-1', undefined);
+    expect(mockEntitiesApi.getEntities).not.toHaveBeenCalledWith('case-1', true);
+    expect(result.current.entities).toEqual([mockEntity]);
+  });
+
   it('handles load errors', async () => {
     mockEntitiesApi.getEntities.mockRejectedValue(new Error('Load failed'));
 

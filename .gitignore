@@ -24,6 +24,9 @@
 # Cargo build outputs
 /src-tauri/target/
 
+# Downloaded sidecars (fetched by `npm run fetch:yt-dlp`; never committed)
+/src-tauri/binaries/
+
 # Tauri generated code, schemas and capability manifests
 /src-tauri/gen/
 

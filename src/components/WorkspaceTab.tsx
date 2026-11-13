@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type {
+  Case,
   SourceWithAttachments,
   SourceType,
   SourceCustomMetadata,
@@ -14,6 +15,7 @@ type WorkspaceTab = 'sources' | 'entities';
 
 interface WorkspaceTabProps {
   caseId: string | null;
+  cases: Case[];
   sources: SourceWithAttachments[];
   sourcesLoading: boolean;
   entities: Entity[];
@@ -70,6 +72,7 @@ const TAB_LABELS: Record<WorkspaceTab, string> = {
 
 export function WorkspaceTab({
   caseId,
+  cases,
   sources,
   sourcesLoading,
   entities,
@@ -129,6 +132,7 @@ export function WorkspaceTab({
         {activeTab === 'entities' && (
           <EntitiesPanel
             selectedCaseId={caseId}
+            cases={cases}
             entities={entities}
             entityTypes={entityTypes}
             loading={entitiesLoading}

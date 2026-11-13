@@ -28,6 +28,9 @@ mod reference_tests;
 mod migration_tests;
 
 #[cfg(test)]
+mod entity_scope_tests;
+
+#[cfg(test)]
 mod download_tests;
 
 use commands::{cases, entities, files, sources};
@@ -82,3 +85,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

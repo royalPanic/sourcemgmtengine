@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EntityDetailDrawer } from './EntityDetailDrawer';
-import type { Entity, EntityQualityWithRefs } from '../types';
+import type { Case, Entity, EntityQualityWithRefs } from '../types';
 
 const mockEntity: Entity = {
   id: 'entity-1',
@@ -36,6 +36,29 @@ const mockSources: { id: string; title: string }[] = [
   { id: 'source-1', title: 'Test Source' },
 ];
 
+const mockCases: Case[] = [
+  {
+    id: 'case-1',
+    title: 'Test Case',
+    description: null,
+    kind: 'case',
+    event_date: null,
+    event_time: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'case-2',
+    title: 'Other Case',
+    description: null,
+    kind: 'case',
+    event_date: null,
+    event_time: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
 describe('EntityDetailDrawer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -53,6 +76,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -71,6 +95,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -92,6 +117,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -112,6 +138,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={onUpdateEntity}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -134,6 +161,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={onUpdateEntity}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -156,6 +184,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={onDeleteEntity}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -177,6 +206,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -196,6 +226,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={[]}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -214,6 +245,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -233,6 +265,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -253,6 +286,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -265,6 +299,70 @@ describe('EntityDetailDrawer', () => {
     expect(onDeleteQuality).toHaveBeenCalledWith('quality-1');
   });
 
+  it('surfaces an error when deleting a quality fails', async () => {
+    const onDeleteQuality = vi.fn().mockRejectedValue(new Error('Delete failed'));
+    render(<EntityDetailDrawer
+      isOpen={true}
+      onClose={vi.fn()}
+      entity={mockEntity}
+      qualities={mockQualities}
+      sources={mockSources}
+      cases={mockCases}
+      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
+      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
+      onDeleteQuality={onDeleteQuality}
+      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+    />);
+    fireEvent.click(screen.getByTitle(/Delete quality/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(screen.getByText(/Delete failed/)).toBeInTheDocument();
+  });
+
+  it('does not delete a quality when the confirmation is dismissed', () => {
+    vi.stubGlobal('confirm', vi.fn(() => false));
+    const onDeleteQuality = vi.fn().mockResolvedValue(undefined);
+    render(<EntityDetailDrawer
+      isOpen={true}
+      onClose={vi.fn()}
+      entity={mockEntity}
+      qualities={mockQualities}
+      sources={mockSources}
+      cases={mockCases}
+      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
+      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
+      onDeleteQuality={onDeleteQuality}
+      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+    />);
+    fireEvent.click(screen.getByTitle(/Delete quality/));
+    expect(onDeleteQuality).not.toHaveBeenCalled();
+  });
+
+  it('shows an em dash for a quality with no value', () => {    const emptyQuality = { ...mockQualities[0], value_string: null };
+    render(<EntityDetailDrawer
+      isOpen={true}
+      onClose={vi.fn()}
+      entity={mockEntity}
+      qualities={[emptyQuality]}
+      sources={mockSources}
+      cases={mockCases}
+      onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
+      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
+      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
+      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+    />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.getByText(/Provenance not recorded/)).toBeInTheDocument();
+  });
+
   it('shows global entity as Yes', () => {
     const globalEntity = { ...mockEntity, is_global: true };
     render(<EntityDetailDrawer
@@ -273,6 +371,7 @@ describe('EntityDetailDrawer', () => {
       entity={globalEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -291,6 +390,7 @@ describe('EntityDetailDrawer', () => {
       entity={mockEntity}
       qualities={mockQualities}
       sources={mockSources}
+      cases={mockCases}
       onUpdateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onCreateQuality={vi.fn().mockResolvedValue(undefined)}
@@ -300,5 +400,63 @@ describe('EntityDetailDrawer', () => {
       onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
     />);
     expect(screen.getByText(/No/)).toBeInTheDocument();
+  });
+
+  it('lets an existing entity be reassigned to another case', async () => {
+    const onUpdateEntity = vi.fn().mockResolvedValue(undefined);
+    render(<EntityDetailDrawer
+      isOpen={true}
+      onClose={vi.fn()}
+      entity={mockEntity}
+      qualities={mockQualities}
+      sources={mockSources}
+      cases={mockCases}
+      onUpdateEntity={onUpdateEntity}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
+      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
+      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
+      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+    />);
+    fireEvent.click(screen.getByText(/^Edit$/));
+
+    // The container is an editable picker, not a read-only id.
+    fireEvent.change(screen.getByDisplayValue('Test Case'), { target: { value: 'case-2' } });
+    fireEvent.click(screen.getByText(/Save Changes/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onUpdateEntity).toHaveBeenCalledWith('entity-1', expect.objectContaining({
+      caseId: 'case-2',
+      isGlobal: false,
+    }));
+  });
+
+  it('clears the container when an entity is made global', async () => {
+    const onUpdateEntity = vi.fn().mockResolvedValue(undefined);
+    render(<EntityDetailDrawer
+      isOpen={true}
+      onClose={vi.fn()}
+      entity={mockEntity}
+      qualities={mockQualities}
+      sources={mockSources}
+      cases={mockCases}
+      onUpdateEntity={onUpdateEntity}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onCreateQuality={vi.fn().mockResolvedValue(undefined)}
+      onUpdateQuality={vi.fn().mockResolvedValue(undefined)}
+      onDeleteQuality={vi.fn().mockResolvedValue(undefined)}
+      onAddQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
+    />);
+    fireEvent.click(screen.getByText(/^Edit$/));
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByText(/Save Changes/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onUpdateEntity).toHaveBeenCalledWith('entity-1', expect.objectContaining({
+      caseId: '',
+      isGlobal: true,
+    }));
   });
 });

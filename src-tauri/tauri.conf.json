@@ -31,6 +31,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/yt-dlp"],
     "publisher": "royalPanic",
     "shortDescription": "Local-first OSINT case and source manager",
     "longDescription": "A local-first desktop application for managing intelligence cases, structured source evaluation, narrative case notes, and media evidence attachments. All data stays on your machine.",

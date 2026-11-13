@@ -327,7 +327,10 @@ pub async fn propagate_entity_rating(
     .await
     .map_err(|e| format!("Failed to read entity reliability for propagation: {}", e))?;
 
-    let Some(reliability) = reliability else {
+    // An empty value means the quality exists but carries no code; writing it
+    // would violate the `reliability_code` CHECK constraint on sources, so
+    // treat it as "nothing to propagate".
+    let Some(reliability) = reliability.filter(|code| !code.is_empty()) else {
         return Ok(());
     };
 

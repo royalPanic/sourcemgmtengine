@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { sourcesApi, filesApi, timestampApi } from '../api/tauri';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import type {
+  SourceWithAttachments,
+  SourceType,
+  SourceCustomMetadata,
+  Stance,
+  TimestampRecord,
+} from '../types';
 
 export function useSources(caseId: string | null) {
   const [sources, setSources] = useState<SourceWithAttachments[]>([]);
@@ -173,28 +179,26 @@ export function useSources(caseId: string | null) {
   const getAttachmentUrl = (relativePath: string) => filesApi.assetUrl(relativePath);
 
   /**
-   * Creates an OpenTimestamps timestamp proof for an attachment.
-   */
-  const timestampAttachment = async (attachmentId: string): Promise<unknown> => {
-    const record = await timestampApi.timestampAttachment(attachmentId);
-    return record;
-  };
+     * Creates an OpenTimestamps timestamp proof for an attachment.
+     */
+    const timestampAttachment = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.timestampAttachment(attachmentId);
+    };
 
-  /**
-   * Re-checks an existing timestamp proof against the calendars.
-   */
-  const verifyTimestamp = async (attachmentId: string): Promise<unknown> => {
-    const record = await timestampApi.verifyTimestamp(attachmentId);
-    return record;
-  };
+    /**
+     * Re-checks an existing timestamp proof against the calendars and the
+     * Bitcoin blockchain, upgrading it if a confirmation is now available.
+     */
+    const verifyTimestamp = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.verifyTimestamp(attachmentId);
+    };
 
-  /**
-   * Gets the timestamp record for an attachment, if any.
-   */
-  const getTimestampStatus = async (attachmentId: string): Promise<unknown> => {
-    const record = await timestampApi.getTimestampStatus(attachmentId);
-    return record;
-  };
+    /**
+     * Gets the timestamp record for an attachment, if any.
+     */
+    const getTimestampStatus = async (attachmentId: string): Promise<TimestampRecord | null> => {
+      return timestampApi.getTimestampStatus(attachmentId);
+    };
 
   return {
     sources,

@@ -306,4 +306,13 @@ pub struct TimestampRecord {
     pub status: TimestampStatus,
     pub created_at: String,
     pub confirmed_at: Option<String>,
+    /// Block height of the earliest verified blockchain attestation.
+    #[serde(default)]
+    pub block_height: Option<u64>,
+    /// Block time of the earliest verified blockchain attestation (RFC 3339).
+    #[serde(default)]
+    pub block_time: Option<String>,
+    /// What the last verification actually checked, for the operator's record.
+    #[serde(default)]
+    pub verification_notes: Vec<String>,
 }

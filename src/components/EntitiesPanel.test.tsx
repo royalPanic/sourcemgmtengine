@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EntitiesPanel } from './EntitiesPanel';
-import type { Entity, EntityType } from '../types';
+import type { Case, Entity, EntityType } from '../types';
 
 const mockEntities: Entity[] = [
   {
@@ -31,6 +31,29 @@ const mockTypes: EntityType[] = [
   { id: 'type-2', name: 'Organization', description: null, default_qualities: [] },
 ];
 
+const mockCases: Case[] = [
+  {
+    id: 'case-1',
+    title: 'Test Case',
+    description: null,
+    kind: 'case',
+    event_date: null,
+    event_time: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 'case-2',
+    title: 'Other Case',
+    description: null,
+    kind: 'case',
+    event_date: null,
+    event_time: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+];
+
 describe('EntitiesPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -44,6 +67,7 @@ describe('EntitiesPanel', () => {
   it('renders entities list', () => {
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -59,6 +83,7 @@ describe('EntitiesPanel', () => {
   it('shows loading state', () => {
     const { container } = render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={[]}
       entityTypes={mockTypes}
       loading={true}
@@ -72,6 +97,7 @@ describe('EntitiesPanel', () => {
   it('shows empty state when no entities', () => {
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={[]}
       entityTypes={mockTypes}
       loading={false}
@@ -85,6 +111,7 @@ describe('EntitiesPanel', () => {
   it('separates global and case-specific entities', () => {
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -99,6 +126,7 @@ describe('EntitiesPanel', () => {
   it('opens new entity modal when clicking New Entity', () => {
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -114,6 +142,7 @@ describe('EntitiesPanel', () => {
   it('opens entity type designer when clicking Types', () => {
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -130,6 +159,7 @@ describe('EntitiesPanel', () => {
     const onOpenEntityDetail = vi.fn();
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -145,6 +175,7 @@ describe('EntitiesPanel', () => {
     const onDeleteEntity = vi.fn().mockResolvedValue(undefined);
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -162,6 +193,7 @@ describe('EntitiesPanel', () => {
     const onCreateEntity = vi.fn().mockResolvedValue(undefined);
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -189,6 +221,7 @@ describe('EntitiesPanel', () => {
     const onCreateEntity = vi.fn().mockRejectedValue(new Error('Creation failed'));
     render(<EntitiesPanel
       selectedCaseId="case-1"
+      cases={[]}
       entities={mockEntities}
       entityTypes={mockTypes}
       loading={false}
@@ -204,6 +237,65 @@ describe('EntitiesPanel', () => {
     fireEvent.click(screen.getByText(/Create Entity/));
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(screen.getByText(/Creation failed/)).toBeInTheDocument();
+  });
+
+  it('offers a case picker and files the entity against the chosen case', async () => {
+    const onCreateEntity = vi.fn().mockResolvedValue(undefined);
+    render(<EntitiesPanel
+      selectedCaseId="case-1"
+      cases={mockCases}
+      entities={mockEntities}
+      entityTypes={mockTypes}
+      loading={false}
+      onCreateEntity={onCreateEntity}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onOpenEntityDetail={vi.fn()}
+    />);
+    fireEvent.click(screen.getByText(/New Entity/));
+
+    // Switching scope to case-specific reveals an explicit case picker.
+    const scopeSelect = screen.getByDisplayValue(/Global/);
+    fireEvent.change(scopeSelect, { target: { value: 'case' } });
+
+    const caseSelect = screen.getByDisplayValue('Test Case');
+    fireEvent.change(caseSelect, { target: { value: 'case-2' } });
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'type-1' } });
+    fireEvent.change(
+      screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/),
+      { target: { value: 'Filed Entity' } }
+    );
+    fireEvent.click(screen.getByText(/Create Entity/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(onCreateEntity).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Filed Entity',
+      caseId: 'case-2',
+      isGlobal: false,
+    }));
+  });
+
+  it('blocks creating a case-specific entity without a case', () => {
+    render(<EntitiesPanel
+      selectedCaseId={null}
+      cases={[]}
+      entities={mockEntities}
+      entityTypes={mockTypes}
+      loading={false}
+      onCreateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onOpenEntityDetail={vi.fn()}
+    />);
+    fireEvent.click(screen.getByText(/New Entity/));
+    fireEvent.change(screen.getByDisplayValue(/Global/), { target: { value: 'case' } });
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'type-1' } });
+    fireEvent.change(
+      screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/),
+      { target: { value: 'Orphan' } }
+    );
+
+    expect(screen.getByText(/Create a case first/)).toBeInTheDocument();
+    expect(screen.getByText(/Create Entity/)).toBeDisabled();
   });
 });
 

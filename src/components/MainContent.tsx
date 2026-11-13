@@ -10,6 +10,8 @@ type Tab = 'notes' | 'workspace' | 'dashboard';
 
 interface MainContentProps {
   container: Case | null;
+  /** Every container, so an entity can be filed against a specific case. */
+  cases: Case[];
   sources: SourceWithAttachments[];
   sourcesLoading: boolean;
   entities: Entity[];
@@ -67,6 +69,7 @@ interface MainContentProps {
 
 export function MainContent({
   container,
+  cases,
   sources,
   sourcesLoading,
   entities,
@@ -175,6 +178,7 @@ export function MainContent({
         {activeTab === 'workspace' && (
           <WorkspaceTab
             caseId={caseId}
+            cases={cases}
             sources={sources}
             sourcesLoading={sourcesLoading}
             entities={entities}

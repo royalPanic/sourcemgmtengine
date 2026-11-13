@@ -38,11 +38,14 @@ export function EntityQualityEditor({
   const [qualityName, setQualityName] = useState(quality?.quality_name ?? '');
   const [qualityType, setQualityType] = useState<QualityType>(quality?.quality_type ?? 'string');
   const [valueString, setValueString] = useState(quality?.value_string ?? '');
-  const [valueInteger, setValueInteger] = useState(quality?.value_integer ?? '');
+  const [valueInteger, setValueInteger] = useState(
+    quality?.value_integer == null ? '' : String(quality.value_integer)
+  );
   const [valueBoolean, setValueBoolean] = useState(quality?.value_boolean ?? false);
   const [valueDate, setValueDate] = useState(quality?.value_date ?? '');
   const [valueCoordinates, setValueCoordinates] = useState(quality?.value_coordinates ?? '');
   const [valueAddress, setValueAddress] = useState(quality?.value_address ?? '');
+  const [sourceId, setSourceId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +53,8 @@ export function EntityQualityEditor({
   // because it drives the entity reliability propagation feature.
   const isReliabilityQuality = qualityType === 'reliability';
   const lockedQualityName = isReliabilityQuality ? 'Reliability' : qualityName;
+  // Provenance rows hang off a saved quality, so a draft must be saved first.
+  const isPersisted = Boolean(quality?.id);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +65,8 @@ export function EntityQualityEditor({
         qualityName: isReliabilityQuality ? 'Reliability' : qualityName.trim(),
         qualityType,
         valueString: qualityType === 'string' || qualityType === 'reliability' ? qualityStringValue() : null,
-        valueInteger: qualityType === 'integer' ? (valueInteger ? Number(valueInteger) : null) : null,
+        // `0` is a legitimate integer, so test for an empty field, not falsiness.
+        valueInteger: qualityType === 'integer' && valueInteger.trim() !== '' ? Number(valueInteger) : null,
         valueBoolean: qualityType === 'boolean' ? valueBoolean : null,
         valueDate: qualityType === 'date' ? valueDate || null : null,
         valueCoordinates: qualityType === 'coordinates' ? valueCoordinates || null : null,
@@ -76,7 +82,8 @@ export function EntityQualityEditor({
   const qualityStringValue = (): string | null => {
     switch (qualityType) {
       case 'boolean': return valueBoolean ? 'true' : 'false';
-      case 'integer': return valueInteger ? String(valueInteger) : null;
+      // `0` is a legitimate integer, so test for an empty field, not falsiness.
+      case 'integer': return valueInteger.trim() !== '' ? valueInteger : null;
       case 'date': return valueDate || null;
       case 'coordinates': return valueCoordinates || null;
       case 'address': return valueAddress || null;
@@ -115,7 +122,8 @@ export function EntityQualityEditor({
           {quality.id ? 'Edit Quality' : 'New Quality'}
         </h2>
         <p className="text-xs text-zinc-500 mb-4">
-          Qualities describe an entity. Each quality can reference sources as provenance.
+          Qualities describe an entity. Source provenance is optional, so a quality
+          can be recorded before the source that supports it exists.
         </p>
 
         <form onSubmit={handleSave}>
@@ -209,33 +217,50 @@ export function EntityQualityEditor({
               />
             )}
             {qualityType === 'reliability' && (
-              <select
-                value={valueString}
-                onChange={(e) => setValueString(e.target.value)}
-                className="select"
-              >
-                <option value="">Not rated</option>
-                {RELIABILITY_CODES.map(code => (
-                  <option key={code} value={code} title={RELIABILITY_DEFINITIONS[code].description}>
-                    {RELIABILITY_DEFINITIONS[code].label}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  value={valueString}
+                  onChange={(e) => setValueString(e.target.value)}
+                  className="select"
+                  required
+                >
+                  <option value="">Not rated</option>
+                  {RELIABILITY_CODES.map(code => (
+                    <option key={code} value={code} title={RELIABILITY_DEFINITIONS[code].description}>
+                      {RELIABILITY_DEFINITIONS[code].label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-zinc-500 mt-1">
+                  A reliability quality needs a code to propagate to citing sources.
+                </p>
+              </>
             )}
           </div>
 
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Source Provenance</label>
             <p className="text-[11px] text-zinc-500 mb-2">
-              Reference one or more sources that support this quality. Their Admiralty ratings
-              are averaged below.
+              Optionally reference one or more sources that support this quality; their
+              Admiralty ratings are averaged below. Leave this empty if the supporting
+              source has not been captured yet.
             </p>
+            {!isPersisted && (
+              <p className="text-[11px] text-amber-500/80 mb-2">
+                Save this quality first, then reopen it to attach provenance.
+              </p>
+            )}
             <div className="flex gap-2 mb-3">
               <select
                 id="source-select"
                 className="select flex-1"
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+                disabled={submitting || !isPersisted || sources.length === 0}
               >
-                <option value="">Select a source</option>
+                <option value="">
+                  {sources.length === 0 ? 'No sources in this container yet' : 'Select a source'}
+                </option>
                 {sources.map(s => (
                   <option key={s.id} value={s.id}>{s.title}</option>
                 ))}
@@ -244,14 +269,11 @@ export function EntityQualityEditor({
                 type="button"
                 className="btn-secondary"
                 onClick={() => {
-                  const select = document.getElementById('source-select') as HTMLSelectElement | null;
-                  const sourceId = select?.value;
-                  if (sourceId) {
-                    void handleAddSourceRef(sourceId);
-                    select.value = '';
-                  }
+                  if (!sourceId) return;
+                  void handleAddSourceRef(sourceId);
+                  setSourceId('');
                 }}
-                disabled={submitting}
+                disabled={submitting || !isPersisted || sources.length === 0 || !sourceId}
               >
                 Add
               </button>
@@ -312,7 +334,7 @@ export function EntityQualityEditor({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !qualityName.trim()}>
+            <button type="submit" className="btn-primary" disabled={submitting || !lockedQualityName.trim()}>
               {submitting ? 'Saving…' : 'Save Quality'}
             </button>
           </div>

@@ -297,54 +297,113 @@ describe('useSources', () => {
 
   it('timestamps an attachment', async () => {
     mockSourcesApi.getAll.mockResolvedValue([mockSource]);
-    mockTimestampApi.timestampAttachment.mockResolvedValue({ id: 'ts-1' });
+      const record = {
+        id: 'ts-1',
+        source_attachment_id: 'att-1',
+        ots_path: 'attachments/a/photo.png.ots',
+        status: 'pending',
+        created_at: '2026-01-01T00:00:00+00:00',
+        confirmed_at: null,
+        block_height: null,
+        block_time: null,
+        verification_notes: [],
+      };
+      mockTimestampApi.timestampAttachment.mockResolvedValue(record);
 
-    const { result } = renderHook(() => useSources('case-1'));
+      const { result } = renderHook(() => useSources('case-1'));
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      let returned: unknown;
+      await act(async () => {
+        returned = await result.current.timestampAttachment('att-1');
+      });
+
+      expect(mockTimestampApi.timestampAttachment).toHaveBeenCalledWith('att-1');
+      // The record must be handed back, since the drawer renders its real status
+      // rather than assuming "pending".
+      expect(returned).toEqual(record);
     });
 
-    await act(async () => {
-      await result.current.timestampAttachment('att-1');
+    it('verifies a timestamp', async () => {
+      mockSourcesApi.getAll.mockResolvedValue([mockSource]);
+      const record = {
+        id: 'ts-1',
+        source_attachment_id: 'att-1',
+        ots_path: 'path.ots',
+        status: 'confirmed',
+        created_at: '2026-01-01T00:00:00+00:00',
+        confirmed_at: '2026-01-02T00:00:00+00:00',
+        block_height: 800000,
+        block_time: '2023-07-24T03:17:09+00:00',
+        verification_notes: ['Bitcoin block 800000 merkle root matches'],
+      };
+      mockTimestampApi.verifyTimestamp.mockResolvedValue(record);
+
+      const { result } = renderHook(() => useSources('case-1'));
+
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      let returned: unknown;
+      await act(async () => {
+        returned = await result.current.verifyTimestamp('att-1');
+      });
+
+      expect(mockTimestampApi.verifyTimestamp).toHaveBeenCalledWith('att-1');
+      expect(returned).toEqual(record);
     });
 
-    expect(mockTimestampApi.timestampAttachment).toHaveBeenCalledWith('att-1');
-  });
+    it('gets timestamp status', async () => {
+      mockSourcesApi.getAll.mockResolvedValue([mockSource]);
+      const record = {
+        id: 'ts-1',
+        source_attachment_id: 'att-1',
+        ots_path: 'path.ots',
+        status: 'pending',
+        created_at: '2026-01-01T00:00:00+00:00',
+        confirmed_at: null,
+        block_height: null,
+        block_time: null,
+        verification_notes: ['Held by 3 calendar(s); not yet confirmed'],
+      };
+      mockTimestampApi.getTimestampStatus.mockResolvedValue(record);
 
-  it('verifies a timestamp', async () => {
-    mockSourcesApi.getAll.mockResolvedValue([mockSource]);
-    mockTimestampApi.verifyTimestamp.mockResolvedValue({ status: 'confirmed', ots_path: 'path' });
+      const { result } = renderHook(() => useSources('case-1'));
 
-    const { result } = renderHook(() => useSources('case-1'));
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
+      let returned: unknown;
+      await act(async () => {
+        returned = await result.current.getTimestampStatus('att-1');
+      });
+
+      expect(mockTimestampApi.getTimestampStatus).toHaveBeenCalledWith('att-1');
+      expect(returned).toEqual(record);
     });
 
-    await act(async () => {
-      await result.current.verifyTimestamp('att-1');
+    it('reports no timestamp status as null', async () => {
+      mockSourcesApi.getAll.mockResolvedValue([mockSource]);
+      mockTimestampApi.getTimestampStatus.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useSources('case-1'));
+
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      });
+
+      let returned: unknown = 'unset';
+      await act(async () => {
+        returned = await result.current.getTimestampStatus('att-1');
+      });
+
+      expect(returned).toBeNull();
     });
-
-    expect(mockTimestampApi.verifyTimestamp).toHaveBeenCalledWith('att-1');
-  });
-
-  it('gets timestamp status', async () => {
-    mockSourcesApi.getAll.mockResolvedValue([mockSource]);
-    mockTimestampApi.getTimestampStatus.mockResolvedValue({ status: 'pending' });
-
-    const { result } = renderHook(() => useSources('case-1'));
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    await act(async () => {
-      await result.current.getTimestampStatus('att-1');
-    });
-
-    expect(mockTimestampApi.getTimestampStatus).toHaveBeenCalledWith('att-1');
-  });
 
   it('getAttachmentUrl calls filesApi.assetUrl', () => {
     mockFilesApi.assetUrl.mockReturnValue('http://localhost/path');

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance, Entity } from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance, Entity, TimestampRecord } from '../types';
 import {
   SOURCE_TYPES,
   RELIABILITY_CODES,
@@ -9,6 +9,7 @@ import {
   STANCES,
   STANCE_DEFINITIONS,
   STANCE_NONE_LABEL,
+  mediaKind,
 } from '../types';
 import { MediaPreview } from './MediaPreview';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
@@ -50,9 +51,9 @@ interface DetailDrawerProps {
   onOpenAttachment: (relativePath: string) => Promise<void>;
   resolveAttachmentUrl: (relativePath: string) => Promise<string>;
   downloadMedia: (sourceId: string, url: string) => Promise<unknown>;
-  timestampAttachment: (attachmentId: string) => Promise<unknown>;
-  verifyTimestamp: (attachmentId: string) => Promise<unknown>;
-  getTimestampStatus: (attachmentId: string) => Promise<unknown>;
+    timestampAttachment: (attachmentId: string) => Promise<TimestampRecord>;
+    verifyTimestamp: (attachmentId: string) => Promise<TimestampRecord>;
+    getTimestampStatus: (attachmentId: string) => Promise<TimestampRecord | null>;
 }
 
 export function DetailDrawer({
@@ -69,7 +70,8 @@ export function DetailDrawer({
   downloadMedia,
   timestampAttachment,
   verifyTimestamp,
-}: DetailDrawerProps) {
+    getTimestampStatus,
+  }: DetailDrawerProps) {
   const [title, setTitle] = useState('');
   const [sourceType, setSourceType] = useState<SourceType>('URL');
   const [url, setUrl] = useState('');
@@ -100,7 +102,7 @@ export function DetailDrawer({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [timestamping, setTimestamping] = useState<Set<string>>(new Set());
   const [timestampError, setTimestampError] = useState<Record<string, string>>({});
-  const [timestamps, setTimestamps] = useState<Record<string, { status: string; otsPath: string }>>({});
+  const [timestamps, setTimestamps] = useState<Record<string, TimestampRecord>>({});
 
   useEffect(() => {
     if (!source) return;
@@ -133,7 +135,40 @@ export function DetailDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !source) return null;
+    // Load the stored timestamp for every attachment when the drawer opens, so
+    // an already-stamped item shows its real state instead of offering to stamp
+    // it again.
+    const attachmentIds = source?.attachments.map(a => a.id).join(',') ?? '';
+
+    useEffect(() => {
+      if (!isOpen || !attachmentIds) {
+        setTimestamps({});
+        return;
+      }
+
+      let cancelled = false;
+      const ids = attachmentIds.split(',').filter(Boolean);
+
+      void (async () => {
+        const loaded: Record<string, TimestampRecord> = {};
+        for (const id of ids) {
+          try {
+            const record = await getTimestampStatus(id);
+            if (record) loaded[id] = record;
+          } catch {
+            // A missing or unreadable status is not fatal; the attachment simply
+            // shows no timestamp.
+          }
+        }
+        if (!cancelled) setTimestamps(loaded);
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, attachmentIds, getTimestampStatus]);
+
+    if (!isOpen || !source) return null;
 
   /**
    * Switches notation and rewrites the field in place, so the value can be
@@ -259,64 +294,52 @@ export function DetailDrawer({
   };
 
   const handleTimestampAttachment = async (attachmentId: string) => {
-    setTimestampError((prev) => {
-      const next = { ...prev };
-      delete next[attachmentId];
-      return next;
-    });
-    setTimestamping((prev) => new Set([...prev, attachmentId]));
-    try {
-      await timestampAttachment(attachmentId);
-      setTimestamps((prev) => ({
-        ...prev,
-        [attachmentId]: { status: 'pending', otsPath: '' },
-      }));
-    } catch (err) {
-      setTimestampError((prev) => ({
-        ...prev,
-        [attachmentId]: err instanceof Error ? err.message : String(err),
-      }));
-    } finally {
-      setTimestamping((prev) => {
-        const next = new Set(prev);
-        next.delete(attachmentId);
+      setTimestampError((prev) => {
+        const next = { ...prev };
+        delete next[attachmentId];
         return next;
       });
-    }
-  };
+      setTimestamping((prev) => new Set([...prev, attachmentId]));
+      try {
+        const record = await timestampAttachment(attachmentId);
+        setTimestamps((prev) => ({ ...prev, [attachmentId]: record }));
+      } catch (err) {
+        setTimestampError((prev) => ({
+          ...prev,
+          [attachmentId]: err instanceof Error ? err.message : String(err),
+        }));
+      } finally {
+        setTimestamping((prev) => {
+          const next = new Set(prev);
+          next.delete(attachmentId);
+          return next;
+        });
+      }
+    };
 
-  const handleVerifyTimestamp = async (attachmentId: string) => {
-    setTimestampError((prev) => {
-      const next = { ...prev };
-      delete next[attachmentId];
-      return next;
-    });
-    setTimestamping((prev) => new Set([...prev, attachmentId]));
-    try {
-      const record = (await verifyTimestamp(attachmentId)) as {
-        status: string;
-        ots_path: string;
-      };
-      setTimestamps((prev) => ({
-        ...prev,
-        [attachmentId]: {
-          status: record.status,
-          otsPath: record.ots_path,
-        },
-      }));
-    } catch (err) {
-      setTimestampError((prev) => ({
-        ...prev,
-        [attachmentId]: err instanceof Error ? err.message : String(err),
-      }));
-    } finally {
-      setTimestamping((prev) => {
-        const next = new Set(prev);
-        next.delete(attachmentId);
+    const handleVerifyTimestamp = async (attachmentId: string) => {
+      setTimestampError((prev) => {
+        const next = { ...prev };
+        delete next[attachmentId];
         return next;
       });
-    }
-  };
+      setTimestamping((prev) => new Set([...prev, attachmentId]));
+      try {
+        const record = await verifyTimestamp(attachmentId);
+        setTimestamps((prev) => ({ ...prev, [attachmentId]: record }));
+      } catch (err) {
+        setTimestampError((prev) => ({
+          ...prev,
+          [attachmentId]: err instanceof Error ? err.message : String(err),
+        }));
+      } finally {
+        setTimestamping((prev) => {
+          const next = new Set(prev);
+          next.delete(attachmentId);
+          return next;
+        });
+      }
+    };
 
   const handleDeleteAttachment = (attachment: SourceAttachment) => {
     if (window.confirm(`Delete attachment "${attachment.file_name}"?`)) {
@@ -324,13 +347,88 @@ export function DetailDrawer({
     }
   };
 
-  const media = source.attachments.filter(a => {
-    const mime = a.mime_type?.toLowerCase() ?? '';
-    return mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/');
-  });
-  const documents = source.attachments.filter(a => !media.includes(a));
+  // Classify through the shared helper so the drawer and MediaPreview always
+  // agree; a MIME-only check here would list a video as a document whenever
+  // the stored MIME type was generic (e.g. application/octet-stream).
+  const media = source.attachments.filter(a => mediaKind(a) !== 'other');
+  const documents = source.attachments.filter(a => mediaKind(a) === 'other');
 
-  return (
+    /**
+     * Renders one attachment with its OpenTimestamps controls.
+     *
+     * A pending timestamp offers "Verify" because the calendar only publishes a
+     * blockchain attestation once its aggregation transaction is mined, which
+     * takes hours. A confirmed timestamp shows the attested block so the operator
+     * can see *what* proved the file's existence.
+     */
+    const renderAttachment = (attachment: SourceAttachment) => {
+      const ts = timestamps[attachment.id];
+      const isTimestamping = timestamping.has(attachment.id);
+      const tsError = timestampError[attachment.id];
+
+      const statusClass =
+        ts?.status === 'confirmed'
+          ? 'bg-emerald-500/20 text-emerald-400'
+          : ts?.status === 'failed'
+            ? 'bg-red-500/20 text-red-400'
+            : 'bg-amber-500/20 text-amber-400';
+
+      return (
+        <div key={attachment.id} className="flex flex-col gap-1">
+          <MediaPreview
+            attachment={attachment}
+            resolveUrl={resolveAttachmentUrl}
+            onOpen={(path) => void onOpenAttachment(path)}
+            onDelete={handleDeleteAttachment}
+          />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className="btn-secondary text-[10px] px-2 py-1"
+              onClick={() => void handleTimestampAttachment(attachment.id)}
+              disabled={isTimestamping || !!ts}
+              title="Create OpenTimestamps proof for this attachment"
+            >
+              {isTimestamping ? 'Timestamping…' : ts ? 'Timestamped' : 'Timestamp'}
+            </button>
+            {ts && ts.status !== 'failed' && (
+              <button
+                type="button"
+                className="btn-secondary text-[10px] px-2 py-1"
+                onClick={() => void handleVerifyTimestamp(attachment.id)}
+                disabled={isTimestamping}
+                title={
+                  ts.status === 'confirmed'
+                    ? 'Re-verify the Bitcoin block attestation'
+                    : 'Ask the calendars whether a Bitcoin attestation is available yet'
+                }
+              >
+                {isTimestamping ? 'Checking…' : 'Verify'}
+              </button>
+            )}
+            {ts && (
+              <span className={`text-[10px] px-2 py-1 rounded ${statusClass}`}>
+                {ts.status}
+                {ts.block_height !== null && ts.block_height !== undefined
+                  ? ` · block ${ts.block_height}`
+                  : ''}
+              </span>
+            )}
+          </div>
+          {ts?.block_time && (
+            <p className="text-[10px] text-zinc-500">
+              Bitcoin block time: {new Date(ts.block_time).toLocaleString()}
+            </p>
+          )}
+          {tsError && <p className="text-[10px] text-red-400">{tsError}</p>}
+          {!tsError && ts?.verification_notes?.length ? (
+            <p className="text-[10px] text-zinc-500">{ts.verification_notes.join(' · ')}</p>
+          ) : null}
+        </div>
+      );
+    };
+
+    return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <aside className="relative w-full max-w-xl h-full bg-zinc-900 border-l border-zinc-800 flex flex-col shadow-2xl">
@@ -503,7 +601,7 @@ export function DetailDrawer({
                     className="btn-secondary text-xs"
                     onClick={handleDownloadMedia}
                     disabled={downloading || !source.url}
-                    title="Download media from this URL and preserve it as an attachment"
+                    title="Download the image or video at this URL and preserve it as an attachment"
                   >
                     {downloading ? 'Downloading…' : 'Download Media'}
                   </button>
@@ -523,123 +621,19 @@ export function DetailDrawer({
               <p className="text-xs text-zinc-500">No attachments.</p>
             ) : (
               <div className="space-y-3">
-                {media.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {media.map(attachment => {
-                      const ts = timestamps[attachment.id];
-                      const isTimestamping = timestamping.has(attachment.id);
-                      const tsError = timestampError[attachment.id];
-                      return (
-                        <div key={attachment.id} className="flex flex-col gap-1">
-                          <MediaPreview
-                            attachment={attachment}
-                            resolveUrl={resolveAttachmentUrl}
-                            onOpen={(path) => void onOpenAttachment(path)}
-                            onDelete={handleDeleteAttachment}
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              className="btn-secondary text-[10px] px-2 py-1"
-                              onClick={() => void handleTimestampAttachment(attachment.id)}
-                              disabled={isTimestamping || !!ts}
-                              title="Create OpenTimestamps proof for this attachment"
-                            >
-                              {isTimestamping ? 'Timestamping…' : ts ? 'Timestamped' : 'Timestamp'}
-                            </button>
-                            {ts && ts.status === 'pending' && (
-                              <button
-                                type="button"
-                                className="btn-secondary text-[10px] px-2 py-1"
-                                onClick={() => void handleVerifyTimestamp(attachment.id)}
-                                disabled={isTimestamping}
-                                title="Re-check timestamp against calendars"
-                              >
-                                Verify
-                              </button>
-                            )}
-                            {ts && (
-                              <span
-                                className={`text-[10px] px-2 py-1 rounded ${
-                                  ts.status === 'confirmed'
-                                    ? 'bg-emerald-500/20 text-emerald-400'
-                                    : ts.status === 'failed'
-                                      ? 'bg-red-500/20 text-red-400'
-                                      : 'bg-amber-500/20 text-amber-400'
-                                }`}
-                              >
-                                {ts.status}
-                              </span>
-                            )}
-                          </div>
-                          {tsError && (
-                            <p className="text-[10px] text-red-400">{tsError}</p>
+                              {media.length > 0 && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {media.map(attachment => renderAttachment(attachment))}
+                                </div>
+                              )}
+                              {documents.length > 0 && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {documents.map(attachment => renderAttachment(attachment))}
+                                </div>
+                              )}
+                            </div>
                           )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {documents.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {documents.map(attachment => {
-                      const ts = timestamps[attachment.id];
-                      const isTimestamping = timestamping.has(attachment.id);
-                      const tsError = timestampError[attachment.id];
-                      return (
-                        <div key={attachment.id} className="flex flex-col gap-1">
-                          <MediaPreview
-                            attachment={attachment}
-                            resolveUrl={resolveAttachmentUrl}
-                            onOpen={(path) => void onOpenAttachment(path)}
-                            onDelete={handleDeleteAttachment}
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              className="btn-secondary text-[10px] px-2 py-1"
-                              onClick={() => void handleTimestampAttachment(attachment.id)}
-                              disabled={isTimestamping || !!ts}
-                              title="Create OpenTimestamps proof for this attachment"
-                            >
-                              {isTimestamping ? 'Timestamping…' : ts ? 'Timestamped' : 'Timestamp'}
-                            </button>
-                            {ts && ts.status === 'pending' && (
-                              <button
-                                type="button"
-                                className="btn-secondary text-[10px] px-2 py-1"
-                                onClick={() => void handleVerifyTimestamp(attachment.id)}
-                                disabled={isTimestamping}
-                                title="Re-check timestamp against calendars"
-                              >
-                                Verify
-                              </button>
-                            )}
-                            {ts && (
-                              <span
-                                className={`text-[10px] px-2 py-1 rounded ${
-                                  ts.status === 'confirmed'
-                                    ? 'bg-emerald-500/20 text-emerald-400'
-                                    : ts.status === 'failed'
-                                      ? 'bg-red-500/20 text-red-400'
-                                      : 'bg-amber-500/20 text-amber-400'
-                                }`}
-                              >
-                                {ts.status}
-                              </span>
-                            )}
-                          </div>
-                          {tsError && (
-                            <p className="text-[10px] text-red-400">{tsError}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+                        </section>
 
           <section className="card p-4">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">Location</h3>

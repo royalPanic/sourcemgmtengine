@@ -154,6 +154,45 @@ describe('EntityQualityEditor', () => {
     });
   });
 
+  it('preserves an integer value of zero', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const zeroQuality = { ...mockQuality, quality_type: 'integer' as const, value_string: null, value_integer: 0 };
+    render(<EntityQualityEditor
+      quality={zeroQuality}
+      sources={mockSources}
+      onSave={onSave}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    expect(screen.getByDisplayValue('0')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Save Quality/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      qualityType: 'integer',
+      valueInteger: 0,
+    }));
+  });
+
+  it('saves a boolean value of false rather than an empty field', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const falseQuality = { ...mockQuality, quality_type: 'boolean' as const, value_boolean: false };
+    render(<EntityQualityEditor
+      quality={falseQuality}
+      sources={mockSources}
+      onSave={onSave}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    fireEvent.click(screen.getByText(/Save Quality/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      qualityType: 'boolean',
+      valueBoolean: false,
+    }));
+  });
+
   it('shows error when save fails', async () => {
     const onSave = vi.fn().mockRejectedValue(new Error('Save failed'));
     render(<EntityQualityEditor
@@ -184,6 +223,35 @@ describe('EntityQualityEditor', () => {
     const addButtons = screen.getAllByRole('button', { name: /Add/ });
     fireEvent.click(addButtons[addButtons.length - 1]);
     expect(onAddSourceRef).toHaveBeenCalledWith({ sourceId: 'source-1' });
+    // The picker resets so the next add starts from scratch.
+    expect(select.value).toBe('');
+  });
+
+  it('keeps Add disabled until a source is chosen', () => {
+    render(<EntityQualityEditor
+      quality={mockQuality}
+      sources={mockSources}
+      onSave={vi.fn().mockResolvedValue(undefined)}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    const addButton = screen.getAllByRole('button', { name: /^Add$/ })[0];
+    expect(addButton).toBeDisabled();
+  });
+
+  it('requires saving an unsaved quality before attaching provenance', () => {
+    render(<EntityQualityEditor
+      quality={{ ...mockQuality, id: '', source_refs: [] }}
+      sources={mockSources}
+      onSave={vi.fn().mockResolvedValue(undefined)}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    expect(screen.getByText(/Save this quality first/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Add$/ })[0]).toBeDisabled();
+    expect(document.getElementById('source-select')).toBeDisabled();
   });
 
   it('calls onRemoveSourceRef when removing a source reference', async () => {
@@ -242,5 +310,41 @@ describe('EntityQualityEditor', () => {
     />);
     fireEvent.click(screen.getByText(/Cancel/));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('saves a reliability quality with no name typed and no provenance', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<EntityQualityEditor
+      quality={{ ...mockQuality, id: '', quality_name: '', quality_type: 'reliability', value_string: 'B', source_refs: [] }}
+      sources={mockSources}
+      onSave={onSave}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    expect(screen.getByText(/Save Quality/)).not.toBeDisabled();
+    fireEvent.click(screen.getByText(/Save Quality/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      qualityName: 'Reliability',
+      qualityType: 'reliability',
+      valueString: 'B',
+    }));
+  });
+
+  it('saves a quality without any source provenance', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<EntityQualityEditor
+      quality={{ ...mockQuality, source_refs: [] }}
+      sources={[]}
+      onSave={onSave}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+    expect(screen.getByText(/Save Quality/)).not.toBeDisabled();
+    fireEvent.click(screen.getByText(/Save Quality/));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onSave).toHaveBeenCalled();
   });
 });

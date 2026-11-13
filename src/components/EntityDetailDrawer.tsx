@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Entity, EntityQualityWithRefs, QualityType } from '../types';
+import type { Case, Entity, EntityQualityWithRefs, QualityType } from '../types';
+import { formatQualityValue } from '../types';
 import { EntityQualityEditor } from './EntityQualityEditor';
 
 interface EntityDetailDrawerProps {
@@ -8,6 +9,8 @@ interface EntityDetailDrawerProps {
   entity: Entity | null;
   qualities: EntityQualityWithRefs[];
   sources: { id: string; title: string }[];
+  /** Every container, so a case-specific entity can be reassigned. */
+  cases: Case[];
   onUpdateEntity: (id: string, params: Partial<{
     name: string;
     description: string;
@@ -52,6 +55,7 @@ export function EntityDetailDrawer({
   entity,
   qualities,
   sources,
+  cases,
   onUpdateEntity,
   onDeleteEntity,
   onCreateQuality,
@@ -64,15 +68,19 @@ export function EntityDetailDrawer({
   const [name, setName] = useState(entity?.name ?? '');
   const [description, setDescription] = useState(entity?.description ?? '');
   const [isGlobal, setIsGlobal] = useState(entity?.is_global ?? true);
+  const [targetCaseId, setTargetCaseId] = useState<string | null>(entity?.case_id ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingQuality, setEditingQuality] = useState<EntityQualityWithRefs | null>(null);
+  const [editingQualityId, setEditingQualityId] = useState<string | null>(null);
+  // A blank draft for a new quality. `id: ''` marks it as unsaved.
+  const [draftQuality, setDraftQuality] = useState<EntityQualityWithRefs | null>(null);
 
   useEffect(() => {
     if (entity) {
       setName(entity.name);
       setDescription(entity.description ?? '');
       setIsGlobal(entity.is_global);
+      setTargetCaseId(entity.case_id ?? null);
     }
   }, [entity]);
 
@@ -83,7 +91,8 @@ export function EntityDetailDrawer({
       await onUpdateEntity(entity!.id, {
         name: name.trim(),
         description: description.trim() || undefined,
-        caseId: isGlobal ? undefined : entity!.case_id ?? undefined,
+        // An empty string clears the column, so a global entity drops its case.
+        caseId: isGlobal ? '' : targetCaseId ?? '',
         isGlobal,
       });
       setEditing(false);
@@ -115,7 +124,8 @@ export function EntityDetailDrawer({
       valueCoordinates: params.valueCoordinates ?? undefined,
       valueAddress: params.valueAddress ?? undefined,
     });
-    setEditingQuality(null);
+    setEditingQualityId(null);
+    setDraftQuality(null);
   };
 
   const handleUpdateQuality = async (id: string, params: Partial<{
@@ -129,16 +139,47 @@ export function EntityDetailDrawer({
     valueAddress: string | null;
   }>) => {
     await onUpdateQuality(id, params);
-    setEditingQuality(null);
+    setEditingQualityId(null);
+    setDraftQuality(null);
   };
 
   const handleDeleteQuality = async (id: string) => {
-    if (window.confirm('Delete this quality?')) {
+    if (!window.confirm('Delete this quality?')) return;
+    setError(null);
+    try {
       await onDeleteQuality(id);
+      // The open editor points at the row that just disappeared.
+      if (editingQualityId === id) {
+        setEditingQualityId(null);
+        setDraftQuality(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDeleteEntity = async (id: string) => {
+    if (!window.confirm('Delete this entity? Its qualities and provenance links are removed too.')) {
+      return;
+    }
+    setError(null);
+    try {
+      await onDeleteEntity(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
   if (!isOpen || !entity) return null;
+
+  // Resolve from the live `qualities` prop rather than a snapshot, so the
+  // provenance list updates as sources are added or removed. An empty id means
+  // the unsaved draft is open.
+  const editingQuality = editingQualityId === null
+    ? null
+    : editingQualityId === ''
+      ? draftQuality
+      : qualities.find(q => q.id === editingQualityId) ?? null;
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -206,12 +247,35 @@ export function EntityDetailDrawer({
             )}
           </div>
 
-          {entity.case_id && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Container</label>
-              <div className="text-zinc-400 text-xs">Case ID: {entity.case_id}</div>
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium mb-1">Container</label>
+            {editing && !isGlobal ? (
+              <>
+                <select
+                  value={targetCaseId ?? ''}
+                  onChange={(e) => setTargetCaseId(e.target.value || null)}
+                  className="select"
+                >
+                  <option value="">Select a case…</option>
+                  {cases.map(c => (
+                    <option key={c.id} value={c.id}>{c.title}</option>
+                  ))}
+                </select>
+                {cases.length === 0 && (
+                  <p className="text-[10px] text-amber-500/80 mt-1">
+                    Create a case first, or mark this entity global.
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="text-zinc-400 text-xs">
+                {isGlobal
+                  ? 'Available in every case'
+                  : cases.find(c => c.id === targetCaseId)?.title
+                    ?? (targetCaseId ? `Case ID: ${targetCaseId}` : 'No container')}
+              </div>
+            )}
+          </div>
 
           <div className="border-t border-zinc-800 pt-4">
             <div className="flex items-center justify-between mb-3">
@@ -219,7 +283,15 @@ export function EntityDetailDrawer({
               <button
                 type="button"
                 className="btn-secondary text-xs"
-                onClick={() => setEditingQuality({ ...entity, id: '', quality_name: '', quality_type: 'string', value_string: null, value_integer: null, value_boolean: null, value_date: null, value_coordinates: null, value_address: null, source_refs: [] } as unknown as EntityQualityWithRefs)}
+                onClick={() => {
+                  setEditingQualityId('');
+                  setDraftQuality({
+                    id: '', entity_id: entity!.id, quality_name: '', quality_type: 'string',
+                    value_string: null, value_integer: null, value_boolean: null,
+                    value_date: null, value_coordinates: null, value_address: null,
+                    created_at: '', updated_at: '', source_refs: [],
+                  });
+                }}
               >
                 Add Quality
               </button>
@@ -237,7 +309,7 @@ export function EntityDetailDrawer({
                     <button
                       type="button"
                       className="btn-ghost p-1 text-xs text-zinc-400 hover:text-zinc-200"
-                      onClick={() => setEditingQuality(q)}
+                      onClick={() => setEditingQualityId(q.id)}
                       title="Edit quality"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -258,9 +330,9 @@ export function EntityDetailDrawer({
                 </div>
                 <div className="text-xs text-zinc-500 mb-1">{q.quality_type}</div>
                 <div className="text-sm text-zinc-300 mb-2">
-                  {q.value_string ?? String(q.value_integer ?? '') ?? String(q.value_boolean ?? '') ?? q.value_date ?? q.value_coordinates ?? q.value_address ?? '—'}
+                  {formatQualityValue(q)}
                 </div>
-                {q.source_refs.length > 0 && (
+                {q.source_refs.length > 0 ? (
                   <div className="flex gap-1 mb-2">
                     {q.source_refs.map(ref => (
                       <span
@@ -271,6 +343,8 @@ export function EntityDetailDrawer({
                       </span>
                     ))}
                   </div>
+                ) : (
+                  <div className="text-[10px] text-zinc-500 italic mb-2">Provenance not recorded</div>
                 )}
               </div>
             ))}
@@ -286,7 +360,7 @@ export function EntityDetailDrawer({
                 <button type="button" onClick={() => setEditing(false)} className="btn-secondary" disabled={saving}>
                   Cancel
                 </button>
-                <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !name.trim()}>
+                <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !name.trim() || (!isGlobal && !targetCaseId)}>
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
               </>
@@ -298,7 +372,7 @@ export function EntityDetailDrawer({
                 <button type="button" onClick={() => setEditing(true)} className="btn-secondary">
                   Edit
                 </button>
-                <button type="button" onClick={() => void onDeleteEntity(entity.id)} className="btn-ghost text-red-400 hover:text-red-300">
+                <button type="button" onClick={() => void handleDeleteEntity(entity.id)} className="btn-ghost text-red-400 hover:text-red-300">
                   Delete
                 </button>
               </>
@@ -317,15 +391,17 @@ export function EntityDetailDrawer({
             } else {
               await handleCreateQuality(params);
             }
-            setEditingQuality(null);
           }}
           onAddSourceRef={async (params) => {
-            await onAddQualitySourceRef({ qualityId: editingQuality!.id, ...params });
+            await onAddQualitySourceRef({ qualityId: editingQuality.id, ...params });
           }}
           onRemoveSourceRef={async (refId) => {
             await onRemoveQualitySourceRef(refId);
           }}
-          onClose={() => setEditingQuality(null)}
+          onClose={() => {
+            setEditingQualityId(null);
+            setDraftQuality(null);
+          }}
         />
       )}
     </div>

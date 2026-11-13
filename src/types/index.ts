@@ -104,6 +104,12 @@ export interface TimestampRecord {
   status: TimestampStatus;
   created_at: string;
   confirmed_at: string | null;
+  /** Block height of the earliest verified blockchain attestation. */
+  block_height: number | null;
+  /** Block time of the earliest verified blockchain attestation (RFC 3339). */
+  block_time: string | null;
+  /** What the last verification actually checked. */
+  verification_notes: string[];
 }
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'other';
@@ -242,6 +248,42 @@ export interface QualitySourceRef {
 /** A quality plus the sources referenced as provenance. */
 export interface EntityQualityWithRefs extends EntityQuality {
   source_refs: QualitySourceRef[];
+}
+
+/**
+ * Renders a quality's typed value for display.
+ *
+ * Each quality stores its value in the column matching its type, so reading the
+ * columns in order would surface a stale value left behind when the type was
+ * changed. Only the column for the current `quality_type` is authoritative.
+ */
+export function formatQualityValue(
+  quality: Pick<
+    EntityQuality,
+    | 'quality_type'
+    | 'value_string'
+    | 'value_integer'
+    | 'value_boolean'
+    | 'value_date'
+    | 'value_coordinates'
+    | 'value_address'
+  >
+): string {
+  switch (quality.quality_type) {
+    case 'boolean':
+      return quality.value_boolean === null ? '—' : quality.value_boolean ? 'True' : 'False';
+    case 'integer':
+      return quality.value_integer === null ? '—' : String(quality.value_integer);
+    case 'date':
+      return quality.value_date ?? '—';
+    case 'coordinates':
+      return quality.value_coordinates ?? '—';
+    case 'address':
+      return quality.value_address ?? '—';
+    // 'string' and 'reliability' both carry their value in value_string.
+    default:
+      return quality.value_string ?? '—';
+  }
 }
 
 /** Computes the average Admiralty rating for a quality's source references. */

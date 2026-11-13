@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import type { Entity, EntityType } from '../types';
+import type { Case, Entity, EntityType } from '../types';
 import { EntityTypeSelector } from './EntityTypeSelector';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
 
 interface EntitiesPanelProps {
-  /** The currently selected case/event, used to scope case-specific entities. */
+  /** The currently selected case/event, used to default the entity's scope. */
   selectedCaseId: string | null;
+  /** Every container, so a case-specific entity can be attached explicitly. */
+  cases: Case[];
   entities: Entity[];
   entityTypes: EntityType[];
   loading: boolean;
@@ -22,6 +24,7 @@ interface EntitiesPanelProps {
 
 export function EntitiesPanel({
   selectedCaseId,
+  cases,
   entities,
   entityTypes,
   loading,
@@ -36,6 +39,9 @@ export function EntitiesPanel({
   const [entityName, setEntityName] = useState('');
   const [entityDescription, setEntityDescription] = useState('');
   const [isGlobal, setIsGlobal] = useState(true);
+  // The container a case-specific entity belongs to. Defaults to the selected
+  // case but is editable, so an entity can be filed against any case.
+  const [targetCaseId, setTargetCaseId] = useState<string | null>(selectedCaseId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,7 +57,7 @@ export function EntitiesPanel({
         entityType: entityType!,
         name: entityName.trim(),
         description: entityDescription.trim() || undefined,
-        caseId: isGlobal ? undefined : selectedCaseId ?? undefined,
+        caseId: isGlobal ? undefined : targetCaseId ?? undefined,
         isGlobal,
       });
       setShowNewEntity(false);
@@ -59,11 +65,18 @@ export function EntitiesPanel({
       setEntityName('');
       setEntityDescription('');
       setIsGlobal(true);
+      setTargetCaseId(selectedCaseId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /** Opens the New Entity dialog, defaulting the scope picker to the case. */
+  const openNewEntity = () => {
+    setTargetCaseId(selectedCaseId);
+    setShowNewEntity(true);
   };
 
   const handleDeleteEntity = async (id: string) => {
@@ -123,7 +136,7 @@ export function EntitiesPanel({
           <button
             type="button"
             className="btn-primary shrink-0"
-            onClick={() => setShowNewEntity(true)}
+            onClick={openNewEntity}
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -254,12 +267,33 @@ export function EntitiesPanel({
                   <option value="case">Case-specific (belongs to one container)</option>
                 </select>
               </div>
+              {!isGlobal && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-1">Case *</label>
+                  <select
+                    value={targetCaseId ?? ''}
+                    onChange={(e) => setTargetCaseId(e.target.value || null)}
+                    className="select"
+                    required
+                  >
+                    <option value="">Select a case…</option>
+                    {cases.map(c => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
+                    ))}
+                  </select>
+                  {cases.length === 0 && (
+                    <p className="text-[10px] text-amber-500/80 mt-1">
+                      Create a case first, or make this entity global.
+                    </p>
+                  )}
+                </div>
+              )}
               {error && <p className="mb-4 text-xs text-red-400">{error}</p>}
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowNewEntity(false)} className="btn-secondary" disabled={submitting}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary" disabled={submitting || !entityType || !entityName.trim()}>
+                <button type="submit" className="btn-primary" disabled={submitting || !entityType || !entityName.trim() || (!isGlobal && !targetCaseId)}>
                   {submitting ? 'Creating…' : 'Create Entity'}
                 </button>
               </div>

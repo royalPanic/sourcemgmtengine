@@ -364,22 +364,32 @@ pub async fn create_entity(
     })
 }
 
-#[command]
-pub async fn get_entities(
-    app: AppHandle,
-    case_id: Option<String>,
-    is_global: Option<bool>,
-) -> Result<Vec<Entity>, String> {
-    let pool = pool::pool(&app).await?;
-
+/// Builds the `get_entities` SQL plus its bind parameters.
+///
+/// A global entity belongs to no container, so filtering by `case_id` alone
+/// would hide every global entity. Selecting a container therefore returns the
+/// global entities *and* that container's own entities. An explicit
+/// `is_global` filter narrows the result further; `true` is container
+/// independent, so the `case_id` is ignored in that case.
+pub(crate) fn build_entities_query(case_id: Option<&str>, is_global: Option<bool>) -> (String, Vec<String>) {
     let mut query = format!("SELECT {} FROM entities", ENTITY_COLUMNS);
-    let mut conditions: Vec<String> = Vec::new();
+    let mut conditions: Vec<&str> = Vec::new();
+    let mut params: Vec<String> = Vec::new();
 
-    if let Some(cid) = &case_id {
-        conditions.push(format!("case_id = '{}'", cid.replace("'", "''")));
-    }
-    if let Some(global) = is_global {
-        conditions.push(format!("is_global = {}", if global { 1 } else { 0 }));
+    match (case_id, is_global) {
+        (Some(cid), Some(false)) => {
+            conditions.push("is_global = 0 AND case_id = ?");
+            params.push(cid.to_string());
+        }
+        // Globals are visible from every container, so the container does not
+        // narrow them.
+        (_, Some(true)) => conditions.push("is_global = 1"),
+        (Some(cid), None) => {
+            conditions.push("(is_global = 1 OR case_id = ?)");
+            params.push(cid.to_string());
+        }
+        (None, Some(false)) => conditions.push("is_global = 0"),
+        (None, None) => {}
     }
 
     if !conditions.is_empty() {
@@ -388,8 +398,24 @@ pub async fn get_entities(
     }
 
     query.push_str(" ORDER BY name COLLATE NOCASE ASC");
+    (query, params)
+}
 
-    let rows = sqlx::query(&query)
+#[command]
+pub async fn get_entities(
+    app: AppHandle,
+    case_id: Option<String>,
+    is_global: Option<bool>,
+) -> Result<Vec<Entity>, String> {
+    let pool = pool::pool(&app).await?;
+
+    let (query, params) = build_entities_query(case_id.as_deref(), is_global);
+    let mut statement = sqlx::query(&query);
+    for param in &params {
+        statement = statement.bind(param);
+    }
+
+    let rows = statement
         .fetch_all(&pool)
         .await
         .map_err(|e| format!("Failed to get entities: {}", e))?;
