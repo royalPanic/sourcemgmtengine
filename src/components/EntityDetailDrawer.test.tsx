@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { EntityDetailDrawer } from './EntityDetailDrawer';
 import type { Case, Entity, EntityQualityWithRefs } from '../types';
 
@@ -60,6 +61,7 @@ const mockCases: Case[] = [
 describe('EntityDetailDrawer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(confirm).mockResolvedValue(true);
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
@@ -194,7 +196,7 @@ describe('EntityDetailDrawer', () => {
     // Click the Delete button in the footer (the one with text "Delete")
     const deleteButtons = screen.getAllByRole('button', { name: /Delete/ });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]!);
-    expect(onDeleteEntity).toHaveBeenCalledWith('entity-1');
+    await waitFor(() => expect(onDeleteEntity).toHaveBeenCalledWith('entity-1'));
   });
 
   it('shows qualities list', () => {
@@ -294,7 +296,7 @@ describe('EntityDetailDrawer', () => {
       onRemoveQualitySourceRef={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByTitle(/Delete quality/));
-    expect(onDeleteQuality).toHaveBeenCalledWith('quality-1');
+    await waitFor(() => expect(onDeleteQuality).toHaveBeenCalledWith('quality-1'));
   });
 
   it('surfaces an error when deleting a quality fails', async () => {
@@ -320,7 +322,7 @@ describe('EntityDetailDrawer', () => {
   });
 
   it('does not delete a quality when the confirmation is dismissed', () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.mocked(confirm).mockResolvedValue(false);
     const onDeleteQuality = vi.fn().mockResolvedValue(undefined);
     render(<EntityDetailDrawer
       isOpen={true}

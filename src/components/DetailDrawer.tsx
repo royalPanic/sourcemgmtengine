@@ -6,6 +6,7 @@ import { SourceFields } from './SourceFields';
 import { useSourceForm, type SourceFormInitial } from './useSourceForm';
 import { selectionOf } from './ReferenceSelect';
 import { pickFile, type PickerMode } from '../utils/filePicker';
+import { confirmNative } from '../utils/dialog';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
   COORDINATE_FORMATS,
@@ -252,11 +253,12 @@ export function DetailDrawer({
   const handleDownloadMedia = async () => {
     if (!source.url) return;
     setDownloadError(null);
-    if (
-      !window.confirm(
-        `Download media from "${source.url}" and preserve it as an attachment?\n\nThis uses the network and may take a while for large files.`,
-      )
-    ) {
+    const confirmed = await confirmNative(
+      `Download media from "${source.url}" and preserve it as an attachment?\n\nThis uses the network and may take a while for large files.`,
+      'Download Media',
+      false,
+    );
+    if (!confirmed) {
       return;
     }
     setDownloading(true);
@@ -317,10 +319,13 @@ export function DetailDrawer({
       }
     };
 
-  const handleDeleteAttachment = (attachment: SourceAttachment) => {
-    if (window.confirm(`Delete attachment "${attachment.file_name}"?`)) {
-      void onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
-    }
+  const handleDeleteAttachment = async (attachment: SourceAttachment) => {
+    const confirmed = await confirmNative(
+      `Delete attachment "${attachment.file_name}"?`,
+      'Delete Attachment',
+    );
+    if (!confirmed) return;
+    await onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
   };
 
   // Classify through the shared helper so the drawer and MediaPreview always

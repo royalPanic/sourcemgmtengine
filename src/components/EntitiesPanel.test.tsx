@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EntitiesPanel } from './EntitiesPanel';
 import type { Case, Entity, EntityType } from '../types';
 
@@ -288,7 +288,7 @@ describe('EntitiesPanel', () => {
     const entityItem = screen.getByText('John Doe').closest('div')!;
     fireEvent.mouseEnter(entityItem);
     fireEvent.click(screen.getByTitle('Delete entity'));
-    expect(onDeleteEntity).toHaveBeenCalledWith('entity-1');
+    await waitFor(() => expect(onDeleteEntity).toHaveBeenCalledWith('entity-1'));
   });
 
   it('creates an entity when submitting the form', async () => {

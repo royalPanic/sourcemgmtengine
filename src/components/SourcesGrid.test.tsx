@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SourcesGrid, StanceBadge } from './SourcesGrid';
 import type { SourceWithAttachments, Stance } from '../types';
 
@@ -146,7 +146,7 @@ describe('SourcesGrid', () => {
     expect(screen.getByText(/Supports/)).toBeInTheDocument();
   });
 
-  it('calls onDeleteSource when deleting', () => {
+  it('calls onDeleteSource when deleting', async () => {
     const sources = [source('supports')];
     const onDeleteSource = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('confirm', vi.fn(() => true));
@@ -161,7 +161,7 @@ describe('SourcesGrid', () => {
     />);
     
     fireEvent.click(screen.getByTitle('Delete source'));
-    expect(onDeleteSource).toHaveBeenCalledWith(sources[0]!.id);
+    await waitFor(() => expect(onDeleteSource).toHaveBeenCalledWith(sources[0]!.id));
   });
 
   it('opens new source modal when clicking Add Source', () => {

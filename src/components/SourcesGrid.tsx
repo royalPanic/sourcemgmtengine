@@ -13,6 +13,7 @@ import {
   type SourceSortField,
 } from '../utils/sourceSort';
 import { STANCE_DEFINITIONS, RELIABILITY_DEFINITIONS, CREDIBILITY_DEFINITIONS } from '../types';
+import { confirmNative } from '../utils/dialog';
 
 interface SourcesGridProps {
   sources: SourceWithAttachments[];
@@ -195,11 +196,13 @@ export function SourcesGrid({
                       type="button"
                       className="btn-ghost p-1.5 text-red-400 hover:bg-red-600/20"
                       title="Delete source"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (window.confirm(`Delete source "${source.title}"?`)) {
-                          void onDeleteSource(source.id);
-                        }
+                        const confirmed = await confirmNative(
+                          `Delete source "${source.title}"?`,
+                          'Delete Source',
+                        );
+                        if (confirmed) await onDeleteSource(source.id);
                       }}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

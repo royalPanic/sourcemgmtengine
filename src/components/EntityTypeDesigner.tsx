@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EntityType, EntityTypeQuality, QualityType } from '../types';
+import { confirmNative } from '../utils/dialog';
 
 interface EntityTypeDesignerProps {
   types: EntityType[];
@@ -100,9 +101,23 @@ export function EntityTypeDesigner({
       return;
     }
 
+    // The quality inputs are a draft until "Add Quality" is clicked. Include
+    // that draft in Save as well, otherwise a fully-filled quality silently
+    // disappears when the operator saves or closes the editor.
+    const submittedQualities = newQualityName.trim()
+      ? [
+          ...qualities,
+          {
+            name: newQualityName.trim(),
+            type: newQualityType,
+            required: newQualityRequired,
+          },
+        ]
+      : qualities;
+
     // A quality with no name would be invisible in the list, so refuse it here
     // rather than letting the backend reject the whole save.
-    const unnamed = qualities.find(q => !q.name.trim());
+    const unnamed = submittedQualities.find(q => !q.name.trim());
     if (unnamed) {
       setError('Every default quality needs a name');
       return;
@@ -114,14 +129,14 @@ export function EntityTypeDesigner({
         await onUpdate(editingType.id, {
           name,
           description: newTypeDescription.trim(),
-          defaultQualities: qualities,
+          defaultQualities: submittedQualities,
         });
       } else {
         await onCreate({
           id,
           name,
           description: newTypeDescription.trim() || undefined,
-          defaultQualities: qualities,
+          defaultQualities: submittedQualities,
         });
       }
       // Back to the list so the saved template is visible.
@@ -136,7 +151,11 @@ export function EntityTypeDesigner({
 
   const handleDelete = async (type: EntityType) => {
     setError(null);
-    if (!window.confirm(`Delete the entity type "${type.name}"?`)) return;
+    const confirmed = await confirmNative(
+      `Delete the entity type "${type.name}"?`,
+      'Delete Entity Type',
+    );
+    if (!confirmed) return;
 
     setSubmitting(true);
     try {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Case, Entity, EntityQualityWithRefs, QualityType } from '../types';
 import { formatQualityValue } from '../types';
 import { EntityQualityEditor } from './EntityQualityEditor';
+import { confirmNative } from '../utils/dialog';
 
 interface EntityDetailDrawerProps {
   isOpen: boolean;
@@ -144,7 +145,8 @@ export function EntityDetailDrawer({
   };
 
   const handleDeleteQuality = async (id: string) => {
-    if (!window.confirm('Delete this quality?')) return;
+    const confirmed = await confirmNative('Delete this quality?', 'Delete Quality');
+    if (!confirmed) return;
     setError(null);
     try {
       await onDeleteQuality(id);
@@ -159,9 +161,11 @@ export function EntityDetailDrawer({
   };
 
   const handleDeleteEntity = async (id: string) => {
-    if (!window.confirm('Delete this entity? Its qualities and provenance links are removed too.')) {
-      return;
-    }
+    const confirmed = await confirmNative(
+      'Delete this entity? Its qualities and provenance links are removed too.',
+      'Delete Entity',
+    );
+    if (!confirmed) return;
     setError(null);
     try {
       await onDeleteEntity(id);

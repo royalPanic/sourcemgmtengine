@@ -1,8 +1,9 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
-// Mock window.confirm globally so tests don't hang on native dialogs.
-vi.stubGlobal('confirm', vi.fn(() => true));
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+  confirm: vi.fn(() => Promise.resolve(true)),
+}));
 
 // jsdom does not expose a usable localStorage here (Node's own global shadows
 // it), so install a minimal in-memory implementation for tests that persist

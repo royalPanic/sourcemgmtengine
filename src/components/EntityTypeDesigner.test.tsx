@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { confirm } from '@tauri-apps/plugin-dialog';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
 import type { EntityType } from '../types';
 
@@ -38,6 +39,7 @@ function fillNewType(id: string, name: string) {
 describe('EntityTypeDesigner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(confirm).mockResolvedValue(true);
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
@@ -181,6 +183,26 @@ describe('EntityTypeDesigner', () => {
     );
   });
 
+  it('includes an unfinished quality draft when saving an existing type', async () => {
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    renderDesigner({ onUpdate });
+
+    fireEvent.click(screen.getByText('Person'));
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Name/), {
+      target: { value: 'Nationality' },
+    });
+    fireEvent.click(screen.getByText(/Save Type/));
+
+    await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      'type-1',
+      expect.objectContaining({
+        defaultQualities: [{ name: 'Nationality', type: 'string', required: false }],
+      })
+    );
+  });
+
   it('sends an empty description when clearing it', async () => {
     const onUpdate = vi.fn().mockResolvedValue(undefined);
     renderDesigner({
@@ -239,7 +261,7 @@ describe('EntityTypeDesigner', () => {
   });
 
   it('keeps the type when the delete confirmation is dismissed', () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.mocked(confirm).mockResolvedValue(false);
     const onDelete = vi.fn().mockResolvedValue(undefined);
     renderDesigner({ types: customTypes, onDelete });
 

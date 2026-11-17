@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Case, Entity, EntityType, EntityTypeQuality } from '../types';
 import { EntityTypeSelector } from './EntityTypeSelector';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
+import { confirmNative } from '../utils/dialog';
 
 interface EntitiesPanelProps {
   /** The currently selected case/event, used to default the entity's scope. */
@@ -111,9 +112,12 @@ export function EntitiesPanel({
   };
 
   const handleDeleteEntity = async (id: string) => {
-    if (window.confirm(`Delete entity "${entities.find(e => e.id === id)?.name ?? id}"? This will also delete all its qualities.`)) {
-      await onDeleteEntity(id);
-    }
+    const confirmed = await confirmNative(
+      `Delete entity "${entities.find(e => e.id === id)?.name ?? id}"? This will also delete all its qualities.`,
+      'Delete Entity',
+    );
+    if (!confirmed) return;
+    await onDeleteEntity(id);
   };
 
   if (manageTypes) {
