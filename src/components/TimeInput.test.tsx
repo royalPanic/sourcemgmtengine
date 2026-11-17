@@ -56,6 +56,38 @@ describe('TimeInput', () => {
     expect(onValidityChange).toHaveBeenCalledWith(true);
   });
 
+  it('calls onValidityChange with false on change for unparseable input', () => {
+    const onValidityChange = vi.fn();
+    render(<TimeInput date="2026-05-01" time="" onChange={vi.fn()} onValidityChange={onValidityChange} />);
+    const input = screen.getByPlaceholderText('HH:MM');
+
+    // No blur: the field must report invalid as soon as the text is unusable.
+    fireEvent.change(input, { target: { value: 'abc' } });
+
+    expect(onValidityChange).toHaveBeenCalledWith(false);
+    expect(onValidityChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('calls onValidityChange with true on change for a normalisable partial time', () => {
+    const onValidityChange = vi.fn();
+    render(<TimeInput date="2026-05-01" time="" onChange={vi.fn()} onValidityChange={onValidityChange} />);
+    const input = screen.getByPlaceholderText('HH:MM');
+
+    fireEvent.change(input, { target: { value: '9:5' } });
+
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('reports empty input as valid', () => {
+    const onValidityChange = vi.fn();
+    render(<TimeInput date="2026-05-01" time="19:30" onChange={vi.fn()} onValidityChange={onValidityChange} />);
+    const input = screen.getByPlaceholderText('HH:MM');
+
+    fireEvent.change(input, { target: { value: '' } });
+
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
+  });
+
   it('commits on Enter key', () => {
     const onChange = vi.fn();
     render(<TimeInput date="2026-05-01" time="" onChange={onChange} />);

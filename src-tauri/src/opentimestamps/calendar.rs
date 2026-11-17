@@ -64,10 +64,7 @@ pub fn submit_digest(calendar_url: &str, digest: &[u8]) -> Result<Timestamp, Cal
 }
 
 /// Asks a calendar for an upgraded timestamp for a commitment it already holds.
-pub fn get_timestamp(
-    calendar_url: &str,
-    commitment: &[u8],
-) -> Result<Timestamp, CalendarError> {
+pub fn get_timestamp(calendar_url: &str, commitment: &[u8]) -> Result<Timestamp, CalendarError> {
     let url = format!(
         "{}/timestamp/{}",
         calendar_url.trim_end_matches('/'),

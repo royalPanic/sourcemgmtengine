@@ -4,8 +4,8 @@ import { EntityTypeSelector } from './EntityTypeSelector';
 import type { EntityType } from '../types';
 
 const mockTypes: EntityType[] = [
-  { id: 'type-1', name: 'Person', description: null, default_qualities: [] },
-  { id: 'type-2', name: 'Organization', description: null, default_qualities: [] },
+  { id: 'type-1', name: 'Person', description: null, default_qualities: [], is_builtin: false },
+  { id: 'type-2', name: 'Organization', description: null, default_qualities: [], is_builtin: false },
 ];
 
 describe('EntityTypeSelector', () => {

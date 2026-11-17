@@ -21,7 +21,7 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 - **Expandable metadata** — arbitrary key/value pairs are stored as JSON in `sources.custom_metadata`, so specialised fields (TLP markings, coordinates, social handles) never require a schema migration.
 - **Entities** — typed, reusable objects (people, organizations, vehicles, nations, governments, etc.) that persist across every case. Entities carry user-defined qualities, including a dedicated **Reliability** quality (A–F).
 - **Workspace tab** — a unified view combining sources, entities, and their relationships for the selected case, replacing separate tabs and panels.
-- **Entity type templates** — pre-seeded types (person, organization, government, nation, vehicle) plus user-defined types, each with default qualities that new entities of that type start with.
+- **Entity type templates** — pre-seeded types (person, organization, government, nation, vehicle) plus user-defined types, each with default qualities that new entities of that type start with. Templates are editable from **Manage Entity Types**; the built-ins are seeded on first launch and can be customised but not deleted, and a type still used by an entity cannot be removed.
 - **Source references** — a source can cite another source in the same container, or an entity. The citing source inherits its reference's Admiralty rating; citing another *source* also locks the stance to none and excludes it from dashboard statistics, so repeated reporting never counts as independent corroboration.
 - **Entity reliability propagation** — when an entity has a Reliability quality (A–F), every source that references that entity inherits that reliability as its own `reliability_code`. Editing the entity's reliability pushes the new rating down to every citing source, live. The source's reliability field is greyed out when it references an entity — the entity wins. Credibility remains independent and is set on the source directly.
 - **Dark-mode-first UI** — a tactical zinc/amber palette built for multi-monitor analysis.
@@ -158,10 +158,10 @@ them together:
 | `src-tauri/Cargo.toml` | `[package] version` | edit by hand |
 | `src-tauri/Cargo.lock` | `osint-case-manager` entry | `cargo update --workspace --offline` in `src-tauri/` |
 
-For example, to go to `2.1.0`:
+For example, to go to `3.0.0`:
 
 ```bash
-npm version 2.1.0 --no-git-tag-version
+npm version 3.0.0 --no-git-tag-version
 # edit src-tauri/tauri.conf.json and src-tauri/Cargo.toml
 cd src-tauri && cargo update --workspace --offline
 ```
@@ -172,8 +172,8 @@ bundled binaries report the wrong version.
 ### 2. Tag and push
 
 ```bash
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ### 3. Let CI build it
@@ -219,7 +219,7 @@ src-tauri/                  Rust backend
   src/database/             connection.rs, migrations.rs, pool.rs
   src/models/models.rs      Serde structs
   capabilities/default.json Tauri v2 permissions
-  entity-types/             Pre-seeded entity type JSON templates
+  entity-types/             Built-in entity type JSON templates, seeded on first launch
     person.json, organization.json, government.json, nation.json, vehicle.json
 ```ission set
   tauri.conf.json           App config

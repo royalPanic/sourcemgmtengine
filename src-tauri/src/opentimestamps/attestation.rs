@@ -45,7 +45,10 @@ pub enum Attestation {
     LitecoinBlockHeader { height: u64 },
     /// An attestation type this build does not understand, preserved verbatim
     /// so a proof round-trips without losing data.
-    Unknown { tag: [u8; TAG_SIZE], payload: Vec<u8> },
+    Unknown {
+        tag: [u8; TAG_SIZE],
+        payload: Vec<u8>,
+    },
 }
 
 impl Attestation {
@@ -123,7 +126,9 @@ impl Attestation {
                 let mut payload_reader = Reader::new(&payload);
                 let height = payload_reader.read_varuint()?;
                 if height > MAX_HEIGHT {
-                    return Err(format!("block height {height} exceeds maximum {MAX_HEIGHT}"));
+                    return Err(format!(
+                        "block height {height} exceeds maximum {MAX_HEIGHT}"
+                    ));
                 }
                 payload_reader.assert_eof()?;
                 Ok(if tag == TAG_BITCOIN {

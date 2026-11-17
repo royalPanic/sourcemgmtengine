@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Case } from '../types';
 
 interface SidebarProps {
@@ -167,6 +167,8 @@ interface CaseListItemProps {
 
 function CaseListItem({ caseItem, isSelected, onSelect, onDelete }: CaseListItemProps) {
   const [hovered, setHovered] = useState(false);
+  // Keeps the "Updated …" line honest as time passes.
+  useRelativeTimeTick();
 
   return (
     <div
@@ -233,6 +235,13 @@ export function formatEventDate(date: string, time: string | null): string {
   return time ? `${formatted} · ${time}` : formatted;
 }
 
+/**
+ * Renders a timestamp as a relative age, falling back to an absolute date.
+ *
+ * The relative text is only meaningful while it is fresh, so the caller
+ * re-renders on a timer (see `useRelativeTimeTick`). Without that, "just now"
+ * would stay on screen indefinitely.
+ */
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return '—';
@@ -247,4 +256,18 @@ function formatDate(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+/**
+ * Re-renders the caller once a minute so relative timestamps age.
+ *
+ * Returns nothing; the re-render is the whole effect.
+ */
+function useRelativeTimeTick(): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTick(tick => tick + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 }

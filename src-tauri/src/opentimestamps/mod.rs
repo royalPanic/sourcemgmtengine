@@ -23,11 +23,13 @@ pub mod op;
 pub mod serialize;
 pub mod timestamp;
 
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use sqlx::Row;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::database::pool;
 use crate::models::models::{TimestampRecord, TimestampStatus};
@@ -39,11 +41,30 @@ use timestamp::{DetachedTimestampFile, Timestamp};
 pub use calendar::CALENDARS;
 
 /// Computes the SHA-256 digest of a file as raw bytes.
+///
+/// The file is streamed through a fixed 64 KB buffer rather than read whole:
+/// attachments can be gigabytes in size, so a single allocation would exhaust
+/// memory on large videos.
 pub fn compute_sha256_bytes(file_path: &Path) -> Result<Vec<u8>, String> {
-    let data = std::fs::read(file_path)
-        .map_err(|e| format!("Failed to read file for hashing: {e}"))?;
+    const BUFFER_SIZE: usize = 64 * 1024;
 
-    Ok(Sha256::digest(&data).to_vec())
+    let mut file =
+        File::open(file_path).map_err(|e| format!("Failed to read file for hashing: {e}"))?;
+
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; BUFFER_SIZE];
+
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Failed while hashing file: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    Ok(hasher.finalize().to_vec())
 }
 
 /// What a stored proof currently says, derived by parsing the `.ots` file.
@@ -57,16 +78,16 @@ pub struct ProofSummary {
     pub block_height: Option<u64>,
 }
 
-    impl StampOutcome {
-        /// A one-line summary of which calendars accepted the commitment.
-        pub fn summary(&self) -> String {
-            let mut parts = vec![format!("stamped by {}", self.accepted.join(", "))];
-            if !self.failures.is_empty() {
-                parts.push(format!("failed: {}", self.failures.join("; ")));
-            }
-            parts.join(" | ")
+impl StampOutcome {
+    /// A one-line summary of which calendars accepted the commitment.
+    pub fn summary(&self) -> String {
+        let mut parts = vec![format!("stamped by {}", self.accepted.join(", "))];
+        if !self.failures.is_empty() {
+            parts.push(format!("failed: {}", self.failures.join("; ")));
         }
+        parts.join(" | ")
     }
+}
 
 /// Summarises a proof without touching the network.
 ///
@@ -361,29 +382,26 @@ pub fn ots_path_for_attachment(relative_path: &str) -> String {
 }
 
 /// Resolves a stored relative attachment path against the app config directory.
+///
+/// Delegates to the shared implementation so the containment check cannot
+/// differ between the attachment commands and the timestamp subsystem.
 pub fn resolve_attachment_path(app: &AppHandle, relative_path: &str) -> Result<PathBuf, String> {
-    let app_config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-
-    let candidate = Path::new(relative_path);
-
-    if candidate.is_absolute() {
-        return Err("Attachment path must be relative".to_string());
-    }
-
-    let mut resolved = app_config_dir.clone();
-    for component in candidate.components() {
-        match component {
-            std::path::Component::Normal(part) => resolved.push(part),
-            std::path::Component::CurDir => {}
-            _ => return Err("Attachment path contains invalid components".to_string()),
-        }
-    }
-
-    Ok(resolved)
+    crate::database::attachment_path::resolve_attachment_path(app, relative_path)
 }
+
+const UPSERT_TIMESTAMP_SQL: &str = "
+    INSERT INTO source_timestamp
+        (id, source_attachment_id, ots_path, status, created_at, confirmed_at)
+    VALUES (?, ?, ?, ?, ?, NULL)
+    ON CONFLICT(source_attachment_id) DO UPDATE SET
+        ots_path = excluded.ots_path,
+        status = excluded.status,
+        created_at = excluded.created_at,
+        confirmed_at = NULL,
+        block_height = NULL,
+        block_time = NULL,
+        verification_notes = '[]'
+";
 
 /// Writes the `.ots` proof alongside the attachment and records the timestamp.
 ///
@@ -406,37 +424,28 @@ pub async fn record_timestamp(
         .ok_or_else(|| "Attachment path has no parent".to_string())?
         .join(Path::new(&ots_path_str).file_name().unwrap_or_default());
 
-    std::fs::write(&ots_absolute, proof)
-        .map_err(|e| format!("Failed to write .ots proof: {e}"))?;
+    std::fs::write(&ots_absolute, proof).map_err(|e| format!("Failed to write .ots proof: {e}"))?;
 
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
 
     // `source_attachment_id` is UNIQUE, so a re-stamp replaces the old row.
-    sqlx::query(
-        "INSERT INTO source_timestamp (id, source_attachment_id, ots_path, status, created_at, confirmed_at)
-         VALUES (?, ?, ?, ?, ?, NULL)
-         ON CONFLICT(source_attachment_id) DO UPDATE SET
-             ots_path = excluded.ots_path,
-             status = excluded.status,
-             created_at = excluded.created_at,
-             confirmed_at = NULL",
-    )
-    .bind(&id)
-    .bind(attachment_id)
-    .bind(&ots_path_str)
-    .bind(TimestampStatus::Pending.as_db())
-    .bind(&now)
-    .execute(&pool)
-    .await
-    .map_err(|e| format!("Failed to record timestamp: {e}"))?;
-
-    let id = sqlx::query("SELECT id FROM source_timestamp WHERE source_attachment_id = ?")
+    sqlx::query(UPSERT_TIMESTAMP_SQL)
+        .bind(&id)
         .bind(attachment_id)
-        .fetch_one(&pool)
+        .bind(&ots_path_str)
+        .bind(TimestampStatus::Pending.as_db())
+        .bind(&now)
+        .execute(&pool)
         .await
-        .map(|row| row.get::<String, _>("id"))
-        .unwrap_or(id);
+        .map_err(|e| format!("Failed to record timestamp: {e}"))?;
+
+    let id: String =
+        sqlx::query_scalar("SELECT id FROM source_timestamp WHERE source_attachment_id = ?")
+            .bind(attachment_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| format!("Failed to retrieve timestamp after upsert: {e}"))?;
 
     Ok(TimestampRecord {
         id,
@@ -459,44 +468,146 @@ pub async fn get_timestamp_for_attachment(
     let pool = pool::pool(app).await?;
 
     let row = sqlx::query(
-        "SELECT id, source_attachment_id, ots_path, status, created_at, confirmed_at FROM source_timestamp WHERE source_attachment_id = ?",
+        "SELECT id, source_attachment_id, ots_path, status, created_at, confirmed_at, \
+         block_height, block_time, verification_notes \
+         FROM source_timestamp WHERE source_attachment_id = ?",
     )
     .bind(attachment_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| format!("Failed to get timestamp: {e}"))?;
 
-    Ok(row.map(|row| TimestampRecord {
-        id: row.get("id"),
-        source_attachment_id: row.get("source_attachment_id"),
-        ots_path: row.get("ots_path"),
-        status: TimestampStatus::from_db(&row.get::<String, _>("status")),
-        created_at: row.get("created_at"),
-        confirmed_at: row.get::<Option<String>, _>("confirmed_at"),
-        block_height: None,
-        block_time: None,
-        verification_notes: Vec::new(),
-    }))
+    let parsed = row
+        .map(|row| {
+            let notes: String = row.get("verification_notes");
+            Ok::<TimestampRecord, String>(TimestampRecord {
+                id: row.get("id"),
+                source_attachment_id: row.get("source_attachment_id"),
+                ots_path: row.get("ots_path"),
+                status: TimestampStatus::from_db(&row.get::<String, _>("status")),
+                created_at: row.get("created_at"),
+                confirmed_at: row.get::<Option<String>, _>("confirmed_at"),
+                block_height: row.get::<Option<i64>, _>("block_height").map(|h| h as u64),
+                block_time: row.get("block_time"),
+                verification_notes: serde_json::from_str(&notes)
+                    .map_err(|e| format!("Failed to parse verification notes: {e}"))?,
+            })
+        })
+        .transpose()?;
+
+    Ok(parsed)
 }
 
-/// Marks a timestamp as confirmed in the database.
-pub async fn confirm_timestamp(app: &AppHandle, timestamp_id: &str) -> Result<(), String> {
+/// Persists the verification outcome for a timestamp record.
+///
+/// Called after a verification pass so the UI can show what was checked without
+/// re-running the (slow, network-bound) check.
+pub async fn save_verification(
+    app: &AppHandle,
+    timestamp_id: &str,
+    status: TimestampStatus,
+    block_height: Option<u64>,
+    block_time: Option<String>,
+    notes: &[String],
+) -> Result<(), String> {
     let pool = pool::pool(app).await?;
     let now = chrono::Utc::now().to_rfc3339();
+    let notes_json = serde_json::to_string(notes)
+        .map_err(|e| format!("Failed to encode verification notes: {e}"))?;
 
-    sqlx::query("UPDATE source_timestamp SET status = 'confirmed', confirmed_at = ? WHERE id = ?")
-        .bind(&now)
-        .bind(timestamp_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| format!("Failed to confirm timestamp: {e}"))?;
+    sqlx::query(
+        "UPDATE source_timestamp \
+         SET status = ?, confirmed_at = ?, block_height = ?, block_time = ?, verification_notes = ? \
+         WHERE id = ?",
+    )
+    .bind(status.as_db())
+    .bind(
+        (status == TimestampStatus::Confirmed).then(|| now.clone()),
+    )
+    .bind(block_height.map(|h| h as i64))
+    .bind(block_time)
+    .bind(notes_json)
+    .bind(timestamp_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to save timestamp verification: {e}"))?;
 
     Ok(())
-    }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::Row;
+
+    #[tokio::test]
+    async fn timestamp_upsert_resets_verification_state() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+        sqlx::query(
+            "CREATE TABLE source_timestamp (
+                id TEXT PRIMARY KEY,
+                source_attachment_id TEXT NOT NULL UNIQUE,
+                ots_path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                confirmed_at TEXT,
+                block_height INTEGER,
+                block_time TEXT,
+                verification_notes TEXT NOT NULL DEFAULT '[]'
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("timestamp schema");
+
+        for id in ["first", "second"] {
+            sqlx::query(UPSERT_TIMESTAMP_SQL)
+                .bind(id)
+                .bind("attachment-1")
+                .bind("attachments/a/photo.png.ots")
+                .bind("pending")
+                .bind(id)
+                .execute(&pool)
+                .await
+                .expect("timestamp upsert");
+        }
+
+        sqlx::query(
+            "UPDATE source_timestamp SET status = 'confirmed', block_height = 800000, \
+             block_time = '2023-07-24T03:17:09+00:00', verification_notes = '[\"verified\"]'",
+        )
+        .execute(&pool)
+        .await
+        .expect("set prior verification");
+
+        sqlx::query(UPSERT_TIMESTAMP_SQL)
+            .bind("third")
+            .bind("attachment-1")
+            .bind("attachments/a/photo.png.ots")
+            .bind("pending")
+            .bind("later")
+            .execute(&pool)
+            .await
+            .expect("restamp existing attachment");
+
+        let row = sqlx::query(
+            "SELECT id, status, block_height, block_time, verification_notes \
+             FROM source_timestamp WHERE source_attachment_id = 'attachment-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("timestamp row");
+        assert_eq!(row.get::<String, _>("id"), "first");
+        assert_eq!(row.get::<String, _>("status"), "pending");
+        assert_eq!(row.get::<Option<i64>, _>("block_height"), None);
+        assert_eq!(row.get::<Option<String>, _>("block_time"), None);
+        assert_eq!(row.get::<String, _>("verification_notes"), "[]");
+    }
 
     #[test]
     fn ots_path_appends_suffix_and_keeps_extension() {
@@ -519,23 +630,45 @@ mod tests {
     }
 
     #[test]
-        fn compute_sha256_returns_hex() {
-            use std::io::Write;
-            let dir = std::env::temp_dir();
-            let file_path = dir.join(format!("ots-test-{}.txt", uuid::Uuid::new_v4()));
-            std::fs::File::create(&file_path)
-                .unwrap()
-                .write_all(b"hello world")
-                .unwrap();
+    fn compute_sha256_returns_hex() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let file_path = dir.join(format!("ots-test-{}.txt", uuid::Uuid::new_v4()));
+        std::fs::File::create(&file_path)
+            .unwrap()
+            .write_all(b"hello world")
+            .unwrap();
 
-            let bytes = compute_sha256_bytes(&file_path).unwrap();
-            assert_eq!(
-                hex::encode(&bytes),
-                "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
-            );
+        let bytes = compute_sha256_bytes(&file_path).unwrap();
+        assert_eq!(
+            hex::encode(&bytes),
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
 
-            let _ = std::fs::remove_file(&file_path);
-        }
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn compute_sha256_streams_files_larger_than_buffer() {
+        use std::io::Write;
+
+        // 200 KB crosses the 64 KB read buffer several times, so a chunked loop
+        // that mishandles boundaries would produce a different digest.
+        let data = "0123456789abcdef".repeat(200 * 1024 / 16);
+
+        let dir = std::env::temp_dir();
+        let file_path = dir.join(format!("ots-test-large-{}.bin", uuid::Uuid::new_v4()));
+        std::fs::File::create(&file_path)
+            .unwrap()
+            .write_all(data.as_bytes())
+            .unwrap();
+
+        let streamed = compute_sha256_bytes(&file_path).unwrap();
+        let one_shot = Sha256::digest(data.as_bytes()).to_vec();
+        assert_eq!(streamed, one_shot);
+
+        let _ = std::fs::remove_file(&file_path);
+    }
 
     #[test]
     fn stamp_digest_rejects_wrong_length() {
@@ -565,91 +698,91 @@ mod tests {
         assert!(verify_proof(b"not a proof").is_err());
     }
 
-        #[test]
-        fn summarize_reports_pending_calendars() {
-            let proof = hex::decode(
+    #[test]
+    fn summarize_reports_pending_calendars() {
+        let proof = hex::decode(
                 "004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e892940108b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9f0086c9332761dc800d908f010fb3317404f7458252f692308113fe7ac08f120f36a3e7490a06dd7f203777a97d3f450184f1991d2ffc45e6573bcb299adae2f08f020f01347446905f39fdf58af94437ccc75d44e3a6a7209b5ebdd15c7d8fe53f03708f1046af786aaf0088cf84953466ce1720083dfe30d2ef90c8e2e2d68747470733a2f2f616c6963652e6274632e63616c656e6461722e6f70656e74696d657374616d70732e6f7267",
             )
             .unwrap();
 
-            let summary = summarize_proof(&proof).unwrap();
-            assert!(!summary.complete);
-            assert_eq!(
-                summary.calendars,
-                vec!["https://alice.btc.calendar.opentimestamps.org"]
-            );
-            assert_eq!(summary.block_height, None);
-        }
+        let summary = summarize_proof(&proof).unwrap();
+        assert!(!summary.complete);
+        assert_eq!(
+            summary.calendars,
+            vec!["https://alice.btc.calendar.opentimestamps.org"]
+        );
+        assert_eq!(summary.block_height, None);
+    }
 
-        #[test]
-        fn summarize_reports_blockchain_attestation() {
-            let proof = hex::decode(
+    #[test]
+    fn summarize_reports_blockchain_attestation() {
+        let proof = hex::decode(
                 "004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e89294010855087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af091000588960d73d719010380ea30",
             )
             .unwrap();
 
-            let summary = summarize_proof(&proof).unwrap();
-            assert!(summary.complete);
-            assert_eq!(summary.block_height, Some(800_000));
-            assert!(summary.calendars.is_empty());
+        let summary = summarize_proof(&proof).unwrap();
+        assert!(summary.complete);
+        assert_eq!(summary.block_height, Some(800_000));
+        assert!(summary.calendars.is_empty());
+    }
+
+    #[test]
+    fn summarize_rejects_malformed_proof() {
+        assert!(summarize_proof(b"not a proof").is_err());
+    }
+
+    /// A proof written by the previous implementation must be detected as
+    /// unusable, because that is what lets the attachment be re-stamped instead
+    /// of being permanently stuck with a file nothing can verify.
+    #[test]
+    fn proof_from_previous_implementation_is_rejected() {
+        fn old_build(file_hash_hex: &str, calendar: &str, attestation: &[u8]) -> Vec<u8> {
+            let mut ops = vec![0x00u8]; // the old invented version byte
+            let hash = hex::decode(file_hash_hex).unwrap();
+            ops.push(0x00); // OP_APPEND where the real tag is 0xf0
+            ops.extend_from_slice(&hash);
+            ops.push(0x01); // OP_SHA256 where the real tag is 0x08
+
+            let cal_hash = Sha256::digest(calendar.as_bytes());
+            ops.push(0x00);
+            ops.extend_from_slice(&cal_hash);
+            ops.push(0x01);
+
+            ops.push(0x02); // a "VERIFY" op that does not exist in the format
+            let len = attestation.len() as u16;
+            ops.push((len >> 8) as u8);
+            ops.push((len & 0xff) as u8);
+            ops.extend_from_slice(attestation);
+            ops
         }
 
-        #[test]
-        fn summarize_rejects_malformed_proof() {
-            assert!(summarize_proof(b"not a proof").is_err());
-        }
+        let legacy = old_build(
+            "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+            "https://alice.btc.calendar.opentimestamps.org",
+            b"not a real attestation",
+        );
 
-        /// A proof written by the previous implementation must be detected as
-        /// unusable, because that is what lets the attachment be re-stamped instead
-        /// of being permanently stuck with a file nothing can verify.
-        #[test]
-        fn proof_from_previous_implementation_is_rejected() {
-            fn old_build(file_hash_hex: &str, calendar: &str, attestation: &[u8]) -> Vec<u8> {
-                let mut ops = vec![0x00u8]; // the old invented version byte
-                let hash = hex::decode(file_hash_hex).unwrap();
-                ops.push(0x00); // OP_APPEND where the real tag is 0xf0
-                ops.extend_from_slice(&hash);
-                ops.push(0x01); // OP_SHA256 where the real tag is 0x08
+        let err = DetachedTimestampFile::deserialize(&legacy).unwrap_err();
+        assert!(
+            err.contains("not an OpenTimestamps proof"),
+            "legacy proof must be rejected, got: {err}"
+        );
+        assert!(summarize_proof(&legacy).is_err());
+    }
 
-                let cal_hash = Sha256::digest(calendar.as_bytes());
-                ops.push(0x00);
-                ops.extend_from_slice(&cal_hash);
-                ops.push(0x01);
-
-                ops.push(0x02); // a "VERIFY" op that does not exist in the format
-                let len = attestation.len() as u16;
-                ops.push((len >> 8) as u8);
-                ops.push((len & 0xff) as u8);
-                ops.extend_from_slice(attestation);
-                ops
-            }
-
-            let legacy = old_build(
-                "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-                "https://alice.btc.calendar.opentimestamps.org",
-                b"not a real attestation",
-            );
-
-            let err = DetachedTimestampFile::deserialize(&legacy).unwrap_err();
-            assert!(
-                err.contains("not an OpenTimestamps proof"),
-                "legacy proof must be rejected, got: {err}"
-            );
-            assert!(summarize_proof(&legacy).is_err());
-        }
-
-        /// The proof path scheme changed, so a stale `photo.ots` from the old build
-        /// can never be mistaken for the proof of `photo.png`.
-        #[test]
-        fn ots_path_does_not_collide_with_previous_scheme() {
-            let path = ots_path_for_attachment("attachments/a/photo.png");
-            assert_eq!(path, "attachments/a/photo.png.ots");
-            assert_ne!(path, "attachments/a/photo.ots");
-        }
+    /// The proof path scheme changed, so a stale `photo.ots` from the old build
+    /// can never be mistaken for the proof of `photo.png`.
+    #[test]
+    fn ots_path_does_not_collide_with_previous_scheme() {
+        let path = ots_path_for_attachment("attachments/a/photo.png");
+        assert_eq!(path, "attachments/a/photo.png.ots");
+        assert_ne!(path, "attachments/a/photo.ots");
+    }
 
     #[test]
     fn format_unix_time_matches_known_block_time() {
-            // Bitcoin block 800000 has timestamp 1690168629.
-            assert_eq!(format_unix_time(1_690_168_629), "2023-07-24T03:17:09+00:00");
-        }
+        // Bitcoin block 800000 has timestamp 1690168629.
+        assert_eq!(format_unix_time(1_690_168_629), "2023-07-24T03:17:09+00:00");
+    }
 }

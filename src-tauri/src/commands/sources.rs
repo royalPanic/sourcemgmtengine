@@ -1,19 +1,20 @@
-use tauri::{command, AppHandle};
-use sqlx::Row;
-use serde_json::Value;
 use chrono::Utc;
+use serde_json::Value;
+use sqlx::Row;
+use tauri::{command, AppHandle};
 
+use crate::commands::references::{
+    inherited_rating, propagate_rating, resolve_reference, validate_reference, ReferenceInput,
+};
 use crate::database::pool;
-use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType, Stance};
+use crate::models::models::{Source, SourceAttachment, SourceType, SourceWithAttachments, Stance};
 use crate::validation::{
     is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
     validate_reliability_patch,
 };
-use crate::commands::references::{
-    inherited_rating, propagate_rating, resolve_reference, validate_reference, ReferenceInput,
-};
 
 const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at";
+const SQLITE_IN_CLAUSE_BATCH_SIZE: usize = 900;
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
@@ -53,16 +54,66 @@ async fn fetch_attachments(
 
     Ok(rows
         .into_iter()
-        .map(|row| SourceAttachment {
-            id: row.get("id"),
-            source_id: row.get("source_id"),
-            file_name: row.get("file_name"),
-            relative_path: row.get("relative_path"),
-            mime_type: row.get("mime_type"),
-            file_size: row.get("file_size"),
-            created_at: row.get("created_at"),
-        })
+        .map(|row| attachment_from_row(&row))
         .collect())
+}
+
+fn attachment_from_row(row: &sqlx::sqlite::SqliteRow) -> SourceAttachment {
+    SourceAttachment {
+        id: row.get("id"),
+        source_id: row.get("source_id"),
+        file_name: row.get("file_name"),
+        relative_path: row.get("relative_path"),
+        mime_type: row.get("mime_type"),
+        file_size: row.get("file_size"),
+        created_at: row.get("created_at"),
+    }
+}
+
+/// Loads every attachment for a set of sources in one query.
+///
+/// `get_sources` used to call [`fetch_attachments`] once per row, which is one
+/// query per source. Grouping them here reduces round-trips to one query per
+/// bounded batch.
+async fn fetch_attachments_for_sources(
+    pool: &sqlx::SqlitePool,
+    source_ids: &[String],
+) -> Result<std::collections::HashMap<String, Vec<SourceAttachment>>, String> {
+    let mut grouped: std::collections::HashMap<String, Vec<SourceAttachment>> =
+        std::collections::HashMap::new();
+
+    if source_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    for source_id_batch in source_ids.chunks(SQLITE_IN_CLAUSE_BATCH_SIZE) {
+        let placeholders = crate::commands::references::placeholders(source_id_batch.len());
+        let query = format!(
+            "SELECT id, source_id, file_name, relative_path, mime_type, file_size, created_at \
+             FROM source_attachments WHERE source_id IN ({placeholders}) \
+             ORDER BY source_id, created_at"
+        );
+
+        let mut statement = sqlx::query(&query);
+        for id in source_id_batch {
+            statement = statement.bind(id);
+        }
+
+        let rows = statement
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to get attachments: {}", e))?;
+
+        for row in &rows {
+            let attachment = attachment_from_row(row);
+            grouped
+                .entry(attachment.source_id.clone())
+                .or_default()
+                .push(attachment);
+        }
+    }
+
+    Ok(grouped)
 }
 
 async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAttachments>, String> {
@@ -87,7 +138,11 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
     )
     .await?;
 
-    Ok(Some(SourceWithAttachments { source, attachments, reference }))
+    Ok(Some(SourceWithAttachments {
+        source,
+        attachments,
+        reference,
+    }))
 }
 
 /// A stance is allowed on any case, since all cases can optionally carry a
@@ -121,7 +176,7 @@ fn validate_source_datetime(
         if !time.is_empty() && !is_hh_mm(time) {
             return Err(format!("Source time must be HH:MM, got \"{}\"", time));
         }
-        if source_date.as_deref().map_or(true, str::is_empty) {
+        if matches!(source_date.as_deref(), None | Some("")) {
             return Err("A source time requires a source date".to_string());
         }
     }
@@ -250,24 +305,42 @@ pub async fn get_sources(
         .await
         .map_err(|e| format!("Failed to get sources: {}", e))?;
 
-    let mut sources = Vec::with_capacity(rows.len());
-    for row in rows {
-        let source = source_from_row(&row);
-        let attachments = fetch_attachments(&app, &source.id).await?;
-        let reference = resolve_reference(
-            &pool,
-            source.reference_source_id.as_deref(),
-            source.reference_entity_id.as_deref(),
-        )
-        .await?;
-        sources.push(SourceWithAttachments { source, attachments, reference });
-    }
+    let sources: Vec<Source> = rows.iter().map(source_from_row).collect();
 
-    Ok(sources)
+    // Load attachments and references in bounded batches rather than issuing
+    // two queries per source.
+    let source_ids: Vec<String> = sources.iter().map(|s| s.id.clone()).collect();
+    let attachments = fetch_attachments_for_sources(&pool, &source_ids).await?;
+
+    let reference_inputs: Vec<(String, Option<String>, Option<String>)> = sources
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                s.reference_source_id.clone(),
+                s.reference_entity_id.clone(),
+            )
+        })
+        .collect();
+    let references =
+        crate::commands::references::resolve_references_for_sources(&pool, &reference_inputs)
+            .await?;
+
+    Ok(sources
+        .into_iter()
+        .map(|source| SourceWithAttachments {
+            attachments: attachments.get(&source.id).cloned().unwrap_or_default(),
+            reference: references.get(&source.id).cloned().flatten(),
+            source,
+        })
+        .collect())
 }
 
 #[command]
-pub async fn get_source(app: AppHandle, id: String) -> Result<Option<SourceWithAttachments>, String> {
+pub async fn get_source(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<SourceWithAttachments>, String> {
     fetch_source(&app, &id).await
 }
 
@@ -405,9 +478,8 @@ pub async fn update_source(
         return Ok(existing.source);
     }
 
-    let rating_touched = reliability_code.is_some()
-        || credibility_code.is_some()
-        || reference_changed;
+    let rating_touched =
+        reliability_code.is_some() || credibility_code.is_some() || reference_changed;
 
     updates.push("updated_at = ?");
     let query = format!("UPDATE sources SET {} WHERE id = ?", updates.join(", "));
@@ -459,7 +531,7 @@ pub async fn update_source(
     // Any source that cites this one mirrors its rating, so a rating change
     // here has to reach them.
     if rating_touched {
-        propagate_rating(&pool, &id, &mut Vec::new()).await?;
+        propagate_rating(&pool, &id).await?;
     }
 
     fetch_source(&app, &id)
@@ -489,6 +561,24 @@ pub async fn delete_source(app: AppHandle, id: String) -> Result<(), String> {
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to clear source citations: {}", e))?;
+
+    // Remove the files before the rows: once the rows are gone there is no
+    // record of where the bytes live, and the attachment store would grow
+    // without bound.
+    let paths: Vec<String> =
+        sqlx::query_scalar("SELECT relative_path FROM source_attachments WHERE source_id = ?")
+            .bind(&id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("Failed to list source attachments: {}", e))?;
+
+    for relative_path in &paths {
+        if let Err(e) = crate::commands::files::remove_attachment_files(&app, relative_path) {
+            // A file that cannot be removed must not block the row delete, or
+            // the operator can never get rid of the source at all.
+            eprintln!("Failed to remove attachment {relative_path}: {e}");
+        }
+    }
 
     sqlx::query("DELETE FROM source_attachments WHERE source_id = ?")
         .bind(&id)
@@ -546,4 +636,63 @@ pub async fn delete_source_attachment(app: AppHandle, id: String) -> Result<(), 
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fetch_attachments_for_sources;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn attachment_lookup_batches_large_source_lists_and_keeps_order() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory database");
+
+        sqlx::query(
+            "CREATE TABLE source_attachments (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                mime_type TEXT,
+                file_size INTEGER,
+                created_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("attachment schema");
+
+        for (id, name, created_at) in [
+            ("a2", "later.jpg", "2024-02-02"),
+            ("a1", "earlier.jpg", "2024-02-01"),
+        ] {
+            sqlx::query(
+                "INSERT INTO source_attachments \
+                 (id, source_id, file_name, relative_path, created_at) \
+                 VALUES (?, 'source-900', ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(name)
+            .bind(name)
+            .bind(created_at)
+            .execute(&pool)
+            .await
+            .expect("attachment row");
+        }
+
+        let source_ids: Vec<String> = (0..901).map(|id| format!("source-{id}")).collect();
+        let attachments = fetch_attachments_for_sources(&pool, &source_ids)
+            .await
+            .expect("batched attachment lookup");
+        let names: Vec<&str> = attachments["source-900"]
+            .iter()
+            .map(|attachment| attachment.file_name.as_str())
+            .collect();
+
+        assert_eq!(names, ["earlier.jpg", "later.jpg"]);
+    }
 }

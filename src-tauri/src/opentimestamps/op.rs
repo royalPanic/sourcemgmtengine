@@ -169,8 +169,14 @@ mod tests {
 
     #[test]
     fn append_and_prepend_concatenate() {
-        assert_eq!(Op::Append(b"def".to_vec()).apply(b"abc").unwrap(), b"abcdef");
-        assert_eq!(Op::Prepend(b"abc".to_vec()).apply(b"def").unwrap(), b"abcdef");
+        assert_eq!(
+            Op::Append(b"def".to_vec()).apply(b"abc").unwrap(),
+            b"abcdef"
+        );
+        assert_eq!(
+            Op::Prepend(b"abc".to_vec()).apply(b"def").unwrap(),
+            b"abcdef"
+        );
     }
 
     #[test]

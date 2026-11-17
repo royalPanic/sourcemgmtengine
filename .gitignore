@@ -23,12 +23,16 @@
 # ==========================================
 # Cargo build outputs
 /src-tauri/target/
+**/*.rs.bk
 
 # Downloaded sidecars (fetched by `npm run fetch:yt-dlp`; never committed)
 /src-tauri/binaries/
 
 # Tauri generated code, schemas and capability manifests
 /src-tauri/gen/
+
+# Release artifact staging folder (used by CI release workflow)
+/release-artifacts/
 
 # NOTE: src-tauri/icons/* is intentionally NOT ignored. tauri.conf.json
 # references these files for bundling, so they must be committed.
@@ -46,6 +50,10 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-debug.log*
 
+# Local pnpm lock/workspace files (CI uses npm ci and package-lock.json)
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
 # Production frontend build outputs
 /dist/
 /dist-ssr/
@@ -56,10 +64,11 @@ pnpm-debug.log*
 # TypeScript incremental build info
 *.tsbuildinfo
 
-# Vite caches and temp files
+# Vite / Vitest caches and temp files
 /.vite/
 /.cache/
 vite.config.ts.timestamp-*
+vitest.config.ts.timestamp-*
 /coverage/
 
 # Linter caches
@@ -89,6 +98,9 @@ vite.config.ts.timestamp-*
 # JetBrains
 .idea/
 *.iml
+
+# Local AI / MCP session artifacts
+.awb/
 
 # Visual Studio
 *.suo

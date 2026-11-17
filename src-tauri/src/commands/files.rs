@@ -1,16 +1,16 @@
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::{command, AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
-use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use url::Url;
 use uuid::Uuid;
 
 use crate::database::pool;
 use crate::models::models::{SourceAttachment, TimestampRecord, TimestampStatus};
 use crate::opentimestamps::{
-    confirm_timestamp, create_timestamp_proof, get_timestamp_for_attachment, record_timestamp,
-    upgrade_proof, verify_proof,
+    create_timestamp_proof, get_timestamp_for_attachment, record_timestamp, upgrade_proof,
+    verify_proof,
 };
 use sqlx::Row;
 
@@ -22,6 +22,7 @@ const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 /// Upper bound for an HTML page fetched while looking for an image. Pages only
 /// need to be large enough to contain their metadata and `<img>` tags.
 const MAX_HTML_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_HTTP_REDIRECTS: u32 = 5;
 
 /// Many hosts reject requests without a browser-like user agent, so a plain
 /// HTTP download sends one rather than the default library string.
@@ -33,50 +34,21 @@ fn max_attachment_label() -> String {
     format!("{} GB", MAX_ATTACHMENT_BYTES / (1024 * 1024 * 1024))
 }
 
-/// Resolves a stored relative path against the app config directory, rejecting
-/// any path that escapes it (absolute paths, `..`, drive prefixes, etc.).
+/// Resolves a stored relative path against the app config directory.
 ///
-/// The SQL plugin stores its database in `app_config_dir`, so attachments live
-/// alongside it and the asset-protocol scope (`$APPCONFIG/attachments/**`)
-/// covers exactly this tree.
-fn resolve_attachment_path(app: &AppHandle, relative_path: &str) -> Result<PathBuf, String> {
-    let app_config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-
-    let candidate = Path::new(relative_path);
-
-    if candidate.is_absolute() {
-        return Err("Attachment path must be relative".to_string());
-    }
-
-    let mut resolved = app_config_dir.clone();
-    for component in candidate.components() {
-        match component {
-            Component::Normal(part) => resolved.push(part),
-            Component::CurDir => {}
-            _ => return Err("Attachment path contains invalid components".to_string()),
-        }
-    }
-
-    // Defence in depth: the canonical parent must stay inside the app config dir.
-    let parent = resolved
-        .parent()
-        .ok_or_else(|| "Attachment path has no parent directory".to_string())?;
-    if let (Ok(canonical_parent), Ok(canonical_root)) =
-        (parent.canonicalize(), app_config_dir.canonicalize())
-    {
-        if !canonical_parent.starts_with(&canonical_root) {
-            return Err("Attachment path escapes the app config directory".to_string());
-        }
-    }
-
-    Ok(resolved)
-}
+/// Re-exported from [`crate::database::attachment_path`] so the attachment
+/// commands and the OpenTimestamps subsystem share one containment check.
+use crate::database::attachment_path::resolve_attachment_path;
 
 /// Strips directory separators and control characters from a user-supplied file name.
-fn sanitize_file_name(file_name: &str) -> String {
+/// Strips characters Windows cannot represent in a file name.
+///
+/// Beyond the path separators and control characters, this drops the colon
+/// (an alternate-stream marker on NTFS), trailing dots and spaces (which
+/// Windows silently strips, so `photo.png.` would collide with `photo.png`),
+/// and the reserved device basenames (`CON`, `NUL`, `COM1`, …) which cannot be
+/// created as files at all.
+pub(crate) fn sanitize_file_name(file_name: &str) -> String {
     let base = Path::new(file_name)
         .file_name()
         .and_then(|n| n.to_str())
@@ -84,14 +56,39 @@ fn sanitize_file_name(file_name: &str) -> String {
 
     let cleaned: String = base
         .chars()
-        .filter(|c| !c.is_control() && *c != '/' && *c != '\\')
+        .filter(|c| !c.is_control() && *c != '/' && *c != '\\' && *c != ':')
         .collect();
 
-    if cleaned.trim().is_empty() {
-        "file".to_string()
-    } else {
-        cleaned
+    // Windows trims trailing dots and spaces, so two names that differ only
+    // there would resolve to the same file.
+    let trimmed = cleaned.trim().trim_end_matches(['.', ' ']);
+
+    if trimmed.is_empty() {
+        return "file".to_string();
     }
+
+    // A reserved device name is unusable even with an extension (`CON.txt`
+    // still refers to the console), so prefix it.
+    let stem = Path::new(trimmed)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(trimmed);
+    if is_reserved_device_name(stem) {
+        return format!("_{trimmed}");
+    }
+
+    trimmed.to_string()
+}
+
+/// True when `name` is a Windows reserved device name, ignoring any extension.
+fn is_reserved_device_name(name: &str) -> bool {
+    const RESERVED: &[&str] = &[
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let upper = name.to_ascii_uppercase();
+    RESERVED.contains(&upper.as_str())
 }
 
 /// Maps a file extension to a MIME type. Used when the caller cannot supply one
@@ -128,31 +125,28 @@ fn mime_from_extension(extension: &str) -> &'static str {
     }
 }
 
-/// Writes `data` into `attachments/<source_id>/` and returns the relative path.
-fn write_attachment(
-    app: &AppHandle,
-    source_id: &str,
-    file_name: &str,
-    data: &[u8],
-) -> Result<String, String> {
-    let file_path = allocate_attachment_path(app, source_id, file_name)?;
-
-    std::fs::write(&file_path.absolute, data)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-
-    Ok(file_path.relative)
-}
-
 /// A resolved destination inside the attachment store.
 struct AttachmentDestination {
     absolute: PathBuf,
     relative: String,
 }
 
+struct TempDirectoryCleanup(PathBuf);
+
+impl Drop for TempDirectoryCleanup {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("Failed to clean up temporary download directory: {error}");
+            }
+        }
+    }
+}
+
 /// Creates `attachments/<source_id>/` and picks a unique file name.
 ///
-/// Split out from [`write_attachment`] so a file already on disk can be copied
-/// in without first being loaded into memory.
+/// Split out from the copy path so a file already on disk can be copied in
+/// without first being loaded into memory.
 fn allocate_attachment_path(
     app: &AppHandle,
     source_id: &str,
@@ -213,23 +207,6 @@ fn copy_attachment(
     Ok(destination)
 }
 
-#[command]
-pub async fn save_attachment(
-    app: AppHandle,
-    source_id: String,
-    file_name: String,
-    data: Vec<u8>,
-) -> Result<String, String> {
-    if data.len() as u64 > MAX_ATTACHMENT_BYTES {
-        return Err(format!(
-            "Attachment exceeds the {} limit",
-            max_attachment_label()
-        ));
-    }
-
-    write_attachment(&app, &source_id, &file_name, &data)
-}
-
 /// Copies a file the user picked on disk into the app's attachment store.
 ///
 /// The frontend uses the dialog plugin to obtain an absolute path, then hands it
@@ -247,8 +224,8 @@ pub async fn import_attachment(
         return Err("Selected path is not a file".to_string());
     }
 
-    let metadata = std::fs::metadata(&path)
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let metadata =
+        std::fs::metadata(&path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
     if metadata.len() > MAX_ATTACHMENT_BYTES {
         return Err(format!(
@@ -267,10 +244,7 @@ pub async fn import_attachment(
     // would otherwise be buffered whole before being written straight back out.
     let destination = copy_attachment(&app, &source_id, &file_name, &path)?;
 
-    let extension = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     Ok(ImportedAttachment {
         file_name,
@@ -288,33 +262,36 @@ pub struct ImportedAttachment {
     pub file_size: i64,
 }
 
-#[command]
-pub async fn read_attachment(app: AppHandle, relative_path: String) -> Result<Vec<u8>, String> {
-    let file_path = resolve_attachment_path(&app, &relative_path)?;
-
-    std::fs::read(&file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))
-}
-
-#[command]
-pub async fn delete_attachment_file(app: AppHandle, relative_path: String) -> Result<(), String> {
-    let file_path = resolve_attachment_path(&app, &relative_path)?;
+/// Removes an attachment's file and its OpenTimestamps proof from disk.
+///
+/// Shared by the `delete_attachment_file` command and the row-delete paths in
+/// `delete_source` / `delete_case`, so deleting a source or a case cannot leave
+/// unreachable files behind in the attachment store.
+///
+/// A missing file is not an error: the row may outlive a file the operator
+/// removed by hand, and the caller still wants the row gone.
+pub(crate) fn remove_attachment_files(app: &AppHandle, relative_path: &str) -> Result<(), String> {
+    let file_path = resolve_attachment_path(app, relative_path)?;
 
     if file_path.exists() {
-        std::fs::remove_file(&file_path)
-            .map_err(|e| format!("Failed to delete file: {}", e))?;
+        std::fs::remove_file(&file_path).map_err(|e| format!("Failed to delete file: {}", e))?;
     }
 
     // Remove the OpenTimestamps proof too, so deleting evidence does not leave
     // an orphaned .ots file behind. The database row cascades on its own.
-    let ots_relative = crate::opentimestamps::ots_path_for_attachment(&relative_path);
-    if let Ok(ots_path) = resolve_attachment_path(&app, &ots_relative) {
-        if ots_path.exists() {
-            let _ = std::fs::remove_file(&ots_path);
-        }
+    let ots_relative = crate::opentimestamps::ots_path_for_attachment(relative_path);
+    let ots_path = resolve_attachment_path(app, &ots_relative)?;
+    if ots_path.exists() {
+        std::fs::remove_file(&ots_path)
+            .map_err(|e| format!("Failed to delete OpenTimestamps proof: {e}"))?;
     }
 
     Ok(())
+}
+
+#[command]
+pub async fn delete_attachment_file(app: AppHandle, relative_path: String) -> Result<(), String> {
+    remove_attachment_files(&app, &relative_path)
 }
 
 #[command]
@@ -363,6 +340,98 @@ fn find_yt_dlp(app: &AppHandle) -> Result<PathBuf, String> {
     )
 }
 
+/// Upper bound on a single yt-dlp run.
+///
+/// Downloads are user-initiated and can legitimately take a while, but an
+/// unbounded wait means a hung or unroutable URL blocks the command forever.
+const YT_DLP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
+
+/// Runs yt-dlp to completion, killing it if it overruns [`YT_DLP_TIMEOUT`].
+///
+/// `Command::output()` waits indefinitely, so a stalled download would hang the
+/// command forever. The wait runs on a helper thread and the caller waits with a
+/// deadline; on expiry the child is killed and the helper's result is discarded.
+///
+/// The wait has to happen on a separate thread rather than through
+/// `try_wait` polling: a child that fills its stdout pipe buffer blocks on
+/// write, so polling for exit while nobody drains the pipe would deadlock.
+fn run_yt_dlp(program: &Path, args: &[String]) -> Result<std::process::Output, String> {
+    use std::process::Stdio;
+
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run yt-dlp: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture yt-dlp stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture yt-dlp stderr".to_string())?;
+    let stdout_reader = drain_pipe(stdout);
+    let stderr_reader = drain_pipe(stderr);
+    let started = std::time::Instant::now();
+
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= YT_DLP_TIMEOUT => {
+                let kill_result = child.kill();
+                let wait_result = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                kill_result.map_err(|e| format!("Failed to terminate timed-out yt-dlp: {e}"))?;
+                wait_result.map_err(|e| format!("Failed to wait for timed-out yt-dlp: {e}"))?;
+                return Err(format!(
+                    "yt-dlp timed out after {} minutes",
+                    YT_DLP_TIMEOUT.as_secs() / 60
+                ));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(error) => {
+                let kill_result = child.kill();
+                let wait_result = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(format!(
+                    "Failed to monitor yt-dlp: {error}; terminate result: {kill_result:?}; wait result: {wait_result:?}"
+                ));
+            }
+        }
+    };
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "yt-dlp stdout reader stopped unexpectedly".to_string())?
+        .map_err(|e| format!("Failed to read yt-dlp stdout: {e}"))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "yt-dlp stderr reader stopped unexpectedly".to_string())?
+        .map_err(|e| format!("Failed to read yt-dlp stderr: {e}"))?;
+
+    Ok(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn drain_pipe<R: Read + Send + 'static>(
+    mut reader: R,
+) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>> {
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output)?;
+        Ok(output)
+    })
+}
+
 /// Returns the bundled `yt-dlp` sidecar if it exists on disk.
 ///
 /// Tauri copies the staged `binaries/yt-dlp-<triple>` into the bundle output
@@ -372,7 +441,11 @@ fn find_yt_dlp(app: &AppHandle) -> Result<PathBuf, String> {
 /// `tauri::process::Command::new_sidecar` keeps a system `PATH` copy usable as
 /// a fallback and avoids panic-on-missing behaviour.
 fn sidecar_yt_dlp(_app: &AppHandle) -> Option<PathBuf> {
-    let exe_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+    let exe_name = if cfg!(windows) {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    };
     let current = std::env::current_exe().ok()?;
     let dir = current.parent()?;
 
@@ -399,8 +472,7 @@ pub(crate) fn parse_reported_path(stdout: &str) -> Option<PathBuf> {
     stdout
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .last()
+        .rfind(|line| !line.is_empty())
         .map(PathBuf::from)
 }
 
@@ -475,10 +547,8 @@ pub(crate) const DOWNLOADABLE_EXTENSIONS: &[&str] = &[
     // images
     "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "tif", "tiff", "ico",
     // video
-    "mp4", "m4v", "webm", "mov", "avi", "mkv",
-    // audio
-    "mp3", "wav", "ogg", "m4a", "flac",
-    // documents commonly captured as evidence
+    "mp4", "m4v", "webm", "mov", "avi", "mkv", // audio
+    "mp3", "wav", "ogg", "m4a", "flac", // documents commonly captured as evidence
     "pdf",
 ];
 
@@ -602,26 +672,170 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&gt;", ">")
 }
 
+/// Why a URL was refused before any request was made.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AddressError {
+    /// The host is a loopback address.
+    Loopback,
+    /// The host is in a private, link-local, or otherwise non-public range.
+    Private,
+    /// The host name could not be resolved.
+    Unresolved,
+}
+
+impl AddressError {
+    fn message(&self) -> &'static str {
+        match self {
+            AddressError::Loopback => "refusing to download from a loopback address",
+            AddressError::Private => "refusing to download from a private or link-local address",
+            AddressError::Unresolved => "could not resolve the download host",
+        }
+    }
+}
+
+/// True when `address` is one the app must not fetch on the operator's behalf.
+///
+/// `download_media` takes an arbitrary URL and stores the response as evidence,
+/// which makes it a server-side request primitive: without this check a source
+/// pointing at `http://localhost:8080/` or the cloud metadata endpoint would be
+/// fetched and preserved. Loopback, private (RFC 1918), link-local, and
+/// unique-local IPv6 ranges are all refused.
+fn is_forbidden_address(address: &std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+
+    match address {
+        IpAddr::V4(v4) => is_forbidden_ipv4(v4),
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                // Link-local (fe80::/10) and unique-local (fc00::/7).
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // IPv4-mapped, e.g. ::ffff:127.0.0.1.
+                || v6.to_ipv4_mapped().is_some_and(|v4| is_forbidden_ipv4(&v4))
+        }
+    }
+}
+
+/// The IPv4 half of [`is_forbidden_address`], split out so an IPv4-mapped IPv6
+/// address can be checked with the same rules.
+fn is_forbidden_ipv4(v4: &std::net::Ipv4Addr) -> bool {
+    v4.is_loopback()
+        || v4.is_private()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+        // 0.0.0.0/8 and 100.64.0.0/10 (CGNAT) are not globally routable.
+        || (v4.octets()[0] == 0)
+        || (v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1]))
+}
+
+/// Resolves `url`'s host and rejects it when it points somewhere local.
+///
+/// The direct HTTP helper calls this before every request, including each
+/// redirect hop, so redirects into the private range are refused.
+pub(crate) fn guard_url(url: &str) -> Result<(), String> {
+    let parsed = Url::parse(url).map_err(|e| format!("Invalid URL \"{url}\": {e}"))?;
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| format!("URL \"{url}\" has no host"))?;
+
+    // A literal IP needs no resolution.
+    if let Ok(address) = host.parse::<std::net::IpAddr>() {
+        return if is_forbidden_address(&address) {
+            Err(address_error_message(&address))
+        } else {
+            Ok(())
+        };
+    }
+
+    // A name resolves through the system resolver; every answer must be public,
+    // because the connection may use any of them.
+    let port = parsed.port_or_known_default().unwrap_or(0);
+    let addresses = std::net::ToSocketAddrs::to_socket_addrs(&(host, port))
+        .map_err(|_| AddressError::Unresolved.message().to_string())?;
+
+    for address in addresses {
+        if is_forbidden_address(&address.ip()) {
+            return Err(address_error_message(&address.ip()));
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn resolve_redirect_target(current: &Url, location: &str) -> Result<Url, String> {
+    let target = current
+        .join(location)
+        .map_err(|e| format!("Invalid redirect target: {e}"))?;
+    if !matches!(target.scheme(), "http" | "https") || target.host_str().is_none() {
+        return Err("Redirect target must use http or https and include a host".to_string());
+    }
+
+    Ok(target)
+}
+
+fn address_error_message(address: &std::net::IpAddr) -> String {
+    if address.is_loopback() {
+        format!("{}: {}", address, AddressError::Loopback.message())
+    } else {
+        format!("{}: {}", address, AddressError::Private.message())
+    }
+}
+
+/// Performs an HTTP request with redirects disabled in the client, validating
+/// each redirect target before issuing the next request.
+fn guarded_get(url: &str, accept: &str, action: &str) -> Result<ureq::Response, String> {
+    let mut current = Url::parse(url).map_err(|e| format!("Invalid URL \"{url}\": {e}"))?;
+    if !matches!(current.scheme(), "http" | "https") || current.host_str().is_none() {
+        return Err("Download URL must use http or https and include a host".to_string());
+    }
+    let agent = ureq::AgentBuilder::new()
+        .redirects(0)
+        .timeout_connect(std::time::Duration::from_secs(15))
+        .timeout_read(std::time::Duration::from_secs(120))
+        .build();
+
+    for redirects in 0..=MAX_HTTP_REDIRECTS {
+        guard_url(current.as_str())?;
+        let response = match agent
+            .get(current.as_str())
+            .set("User-Agent", DOWNLOAD_USER_AGENT)
+            .set("Accept", accept)
+            .call()
+        {
+            Ok(response) => response,
+            Err(ureq::Error::Status(status, _)) => {
+                return Err(format!("HTTP {status} for {}", current.as_str()))
+            }
+            Err(ureq::Error::Transport(e)) => {
+                return Err(format!("Failed to {action} {}: {e}", current.as_str()))
+            }
+        };
+
+        if !matches!(response.status(), 301 | 302 | 303 | 307 | 308) {
+            return Ok(response);
+        }
+        if redirects == MAX_HTTP_REDIRECTS {
+            return Err(format!("Too many redirects while trying to {action} {url}"));
+        }
+        let location = response
+            .header("Location")
+            .ok_or_else(|| "Redirect response did not include a Location header".to_string())?;
+        current = resolve_redirect_target(&current, location)?;
+    }
+
+    Err(format!("Too many redirects while trying to {action} {url}"))
+}
+
 /// Streams a direct file URL to `destination`, enforcing the size cap.
 ///
 /// Streaming keeps a multi-gigabyte video out of memory. The cap is checked
 /// both from `Content-Length` (when advertised) and against bytes actually
 /// read, so a lying or chunked response cannot bypass it.
 fn http_download_to(url: &str, destination: &Path) -> Result<u64, String> {
-    let response = ureq::get(url)
-        .set("User-Agent", DOWNLOAD_USER_AGENT)
-        .set("Accept", "*/*")
-        .call();
-
-    let response = match response {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, _)) => {
-            return Err(format!("HTTP {status} while downloading {url}"))
-        }
-        Err(ureq::Error::Transport(e)) => {
-            return Err(format!("Failed to download {url}: {e}"))
-        }
-    };
+    let response = guarded_get(url, "*/*", "download")?;
 
     if let Some(length) = response
         .header("Content-Length")
@@ -680,21 +894,9 @@ fn http_download_to(url: &str, destination: &Path) -> Result<u64, String> {
 }
 
 /// Fetches an HTML page and returns its body, bounded by [`MAX_HTML_BYTES`].
-fn fetch_html(url: &str) -> Result<String, String> {
-    let response = ureq::get(url)
-        .set("User-Agent", DOWNLOAD_USER_AGENT)
-        .set("Accept", "text/html,application/xhtml+xml")
-        .call();
-
-    let response = match response {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, _)) => {
-            return Err(format!("HTTP {status} while fetching {url}"))
-        }
-        Err(ureq::Error::Transport(e)) => {
-            return Err(format!("Failed to fetch {url}: {e}"))
-        }
-    };
+fn fetch_html(url: &str) -> Result<(String, String), String> {
+    let response = guarded_get(url, "text/html,application/xhtml+xml", "fetch")?;
+    let page_url = response.get_url().to_string();
 
     let mut reader = response.into_reader().take(MAX_HTML_BYTES);
     let mut bytes = Vec::new();
@@ -702,7 +904,7 @@ fn fetch_html(url: &str) -> Result<String, String> {
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Failed to read {url}: {e}"))?;
 
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), page_url))
 }
 
 /// Downloads a direct file (or an image advertised by a web page) to disk.
@@ -715,8 +917,8 @@ fn download_direct_file(
         UrlKind::DirectFile => (url.to_string(), None),
         UrlKind::WebPage => {
             // A page rather than a file: ask the page which image represents it.
-            let html = fetch_html(url)?;
-            let image = extract_image_url(&html, url).ok_or_else(|| {
+            let (html, page_url) = fetch_html(url)?;
+            let image = extract_image_url(&html, &page_url).ok_or_else(|| {
                 format!(
                     "No image found on {url}. yt-dlp is used for video pages; \
                      this page exposed no og:image or <img> to download."
@@ -779,8 +981,13 @@ pub async fn download_media(
     let temp_dir = std::env::temp_dir().join(format!("osint-download-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {e}"))?;
+    let temp_dir_cleanup = TempDirectoryCleanup(temp_dir.clone());
 
     let kind = classify_url(&url)?;
+
+    // Refuse local addresses before any work: yt-dlp would happily fetch
+    // `http://localhost/` and the result would be preserved as evidence.
+    guard_url(&url)?;
 
     // A direct file (image, video, audio, PDF) is a plain GET. Only a web page
     // needs yt-dlp, and only when it is actually available — so an image page
@@ -795,10 +1002,7 @@ pub async fn download_media(
                     let output_template = temp_dir.join("%(title)s.%(ext)s");
                     let args = yt_dlp_args(&url, &output_template.to_string_lossy());
 
-                    let output = Command::new(&yt_dlp)
-                        .args(&args)
-                        .output()
-                        .map_err(|e| format!("Failed to run yt-dlp: {e}"))?;
+                    let output = run_yt_dlp(&yt_dlp, &args)?;
 
                     if output.status.success() {
                         // `--print` writes one line per file. Normally that is a
@@ -809,8 +1013,7 @@ pub async fn download_media(
                         match reported {
                             Some(path) => path,
                             None => {
-                                let _ = std::fs::remove_dir_all(&temp_dir);
-                                return Err("yt-dlp did not report a downloaded file".to_string());
+                                return Err("yt-dlp did not report a downloaded file".to_string())
                             }
                         }
                     } else {
@@ -820,7 +1023,6 @@ pub async fn download_media(
                         match download_direct_file(&temp_dir, &url, UrlKind::WebPage) {
                             Ok((path, _, _)) => path,
                             Err(image_error) => {
-                                let _ = std::fs::remove_dir_all(&temp_dir);
                                 return Err(if stderr.is_empty() {
                                     format!("yt-dlp exited with {}; {image_error}", output.status)
                                 } else {
@@ -839,19 +1041,24 @@ pub async fn download_media(
     };
 
     if !downloaded_path.exists() {
-        let _ = std::fs::remove_dir_all(&temp_dir);
         return Err(format!(
             "Downloaded file {} was not found on disk",
             downloaded_path.display()
         ));
     }
 
+    let temp_root = std::fs::canonicalize(&temp_dir)
+        .map_err(|e| format!("Failed to resolve temporary download directory: {e}"))?;
+    let downloaded_path = std::fs::canonicalize(&downloaded_path)
+        .map_err(|e| format!("Failed to resolve downloaded file path: {e}"))?;
+    if !downloaded_path.starts_with(&temp_root) {
+        return Err("Downloaded file path escaped its temporary directory".to_string());
+    }
+
     let metadata = std::fs::metadata(&downloaded_path)
         .map_err(|e| format!("Failed to read downloaded file metadata: {e}"))?;
 
     if metadata.len() > MAX_ATTACHMENT_BYTES {
-        // Clean up before erroring.
-        let _ = std::fs::remove_dir_all(&temp_dir);
         return Err(format!(
             "Downloaded file exceeds the {} limit",
             max_attachment_label()
@@ -867,8 +1074,8 @@ pub async fn download_media(
     // Copy on disk rather than reading the whole media file into memory.
     let destination = copy_attachment(&app, &source_id, &file_name, &downloaded_path)?;
 
-    // Clean up the temp download now that it is in the attachment store.
-    let _ = std::fs::remove_dir_all(&temp_dir);
+    // Clean up before timestamping, which may involve network requests.
+    drop(temp_dir_cleanup);
 
     let mime_type = mime_from_extension(
         downloaded_path
@@ -917,25 +1124,23 @@ pub async fn download_media(
 
     if attachment_path.exists() {
         let stamp_path = attachment_path.clone();
-        let stamped = tauri::async_runtime::spawn_blocking(move || {
-            create_timestamp_proof(&stamp_path)
-        })
-        .await;
+        let stamped =
+            tauri::async_runtime::spawn_blocking(move || create_timestamp_proof(&stamp_path)).await;
 
         match stamped {
             Ok(Ok(outcome)) => {
-                        eprintln!("Auto-timestamp: {}", outcome.summary());
-                        if let Err(e) = record_timestamp(
-                            &app,
-                            &attachment.id,
-                            &attachment.relative_path,
-                            &outcome.proof,
-                        )
-                        .await
-                        {
-                            eprintln!("Failed to record auto-timestamp: {e}");
-                        }
-                    }
+                eprintln!("Auto-timestamp: {}", outcome.summary());
+                if let Err(e) = record_timestamp(
+                    &app,
+                    &attachment.id,
+                    &attachment.relative_path,
+                    &outcome.proof,
+                )
+                .await
+                {
+                    eprintln!("Failed to record auto-timestamp: {e}");
+                }
+            }
             Ok(Err(e)) => eprintln!("Auto-timestamp proof creation failed: {e}"),
             Err(e) => eprintln!("Auto-timestamp task failed: {e}"),
         }
@@ -955,48 +1160,44 @@ pub async fn timestamp_attachment(
     let pool = pool::pool(&app).await?;
 
     // Verify the attachment exists and get its relative path.
-    let row = sqlx::query(
-        "SELECT relative_path FROM source_attachments WHERE id = ?",
-    )
-    .bind(&attachment_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| format!("Failed to look up attachment: {e}"))?;
+    let row = sqlx::query("SELECT relative_path FROM source_attachments WHERE id = ?")
+        .bind(&attachment_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| format!("Failed to look up attachment: {e}"))?;
 
     let relative_path: String = row
         .map(|r| r.get("relative_path"))
         .ok_or_else(|| format!("Attachment not found: {attachment_id}"))?;
 
     // Check for an existing timestamp. An existing record only blocks a re-stamp
-        // when its proof is a valid OpenTimestamps file; a proof written by an
-        // earlier build cannot be verified by anything, so re-stamping it is the
-        // only way to make the evidence usable again.
-        let existing = get_timestamp_for_attachment(&app, &attachment_id).await?;
-        if let Some(record) = &existing {
-            let app_config_dir = app
-                .path()
-                .app_config_dir()
-                .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-            let existing_proof_path = app_config_dir.join(Path::new(&record.ots_path));
+    // when its proof is a valid OpenTimestamps file; a proof written by an
+    // earlier build cannot be verified by anything, so re-stamping it is the
+    // only way to make the evidence usable again.
+    let existing = get_timestamp_for_attachment(&app, &attachment_id).await?;
+    if let Some(record) = &existing {
+        let app_config_dir = app
+            .path()
+            .app_config_dir()
+            .map_err(|e| format!("Failed to get app config dir: {}", e))?;
+        let existing_proof_path = app_config_dir.join(Path::new(&record.ots_path));
 
-            match std::fs::read(&existing_proof_path) {
-                Ok(bytes) => {
-                    if crate::opentimestamps::summarize_proof(&bytes).is_ok() {
-                        return Err("Attachment already has a timestamp".to_string());
-                    }
-                    eprintln!(
-                        "Replacing unreadable timestamp proof for attachment {attachment_id}: \
+        match std::fs::read(&existing_proof_path) {
+            Ok(bytes) => {
+                if crate::opentimestamps::summarize_proof(&bytes).is_ok() {
+                    return Err("Attachment already has a timestamp".to_string());
+                }
+                eprintln!(
+                    "Replacing unreadable timestamp proof for attachment {attachment_id}: \
                          {} is not a valid OpenTimestamps file",
-                        record.ots_path
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Replacing missing timestamp proof for attachment {attachment_id}: {e}"
-                    );
-                }
+                    record.ots_path
+                );
+            }
+            Err(e) => {
+                eprintln!("Replacing missing timestamp proof for attachment {attachment_id}: {e}");
             }
         }
+    }
 
     // Resolve the attachment's absolute path.
     let attachment_path = crate::opentimestamps::resolve_attachment_path(&app, &relative_path)?;
@@ -1008,11 +1209,9 @@ pub async fn timestamp_attachment(
     // Create the timestamp proof (hashes file, submits to calendars). This is
     // blocking network I/O, so it runs off the async runtime.
     let stamp_path = attachment_path.clone();
-    let outcome = tauri::async_runtime::spawn_blocking(move || {
-        create_timestamp_proof(&stamp_path)
-    })
-    .await
-    .map_err(|e| format!("Timestamp task failed: {e}"))??;
+    let outcome = tauri::async_runtime::spawn_blocking(move || create_timestamp_proof(&stamp_path))
+        .await
+        .map_err(|e| format!("Timestamp task failed: {e}"))??;
 
     // Record and write the .ots proof.
     record_timestamp(&app, &attachment_id, &relative_path, &outcome.proof).await
@@ -1044,8 +1243,8 @@ pub async fn verify_timestamp(
         return Err("Timestamp proof file not found on disk".to_string());
     }
 
-    let proof = std::fs::read(&ots_absolute)
-        .map_err(|e| format!("Failed to read .ots proof: {e}"))?;
+    let proof =
+        std::fs::read(&ots_absolute).map_err(|e| format!("Failed to read .ots proof: {e}"))?;
 
     // Upgrading and verifying both perform blocking network I/O.
     let proof_for_task = proof.clone();
@@ -1065,107 +1264,118 @@ pub async fn verify_timestamp(
 
     record.verification_notes = verification.notes.clone();
 
-        if upgrade.changed {
-            record.verification_notes.push(format!(
-                "Upgraded with attestations from: {}",
-                upgrade.upgraded_by.join(", ")
-            ));
-        }
-        if !upgrade.complete {
-            record
-                .verification_notes
-                .push("No blockchain attestation yet; the calendar has not published one".to_string());
-        }
-        for failure in &upgrade.failures {
-            record
-                .verification_notes
-                .push(format!("Calendar issue: {failure}"));
-        }
+    if upgrade.changed {
+        record.verification_notes.push(format!(
+            "Upgraded with attestations from: {}",
+            upgrade.upgraded_by.join(", ")
+        ));
+    }
+    if !upgrade.complete {
+        record
+            .verification_notes
+            .push("No blockchain attestation yet; the calendar has not published one".to_string());
+    }
+    for failure in &upgrade.failures {
+        record
+            .verification_notes
+            .push(format!("Calendar issue: {failure}"));
+    }
 
-        record.block_height = verification.block_height;
+    record.block_height = verification.block_height;
     record.block_time = verification.block_time.clone();
 
     if verification.verified {
         record.status = TimestampStatus::Confirmed;
         record.confirmed_at = Some(chrono::Utc::now().to_rfc3339());
-        confirm_timestamp(&app, &record.id).await?;
-        } else {
-            // Either the calendar's aggregation transaction has not been mined yet
-            // (normal for hours after stamping) or a blockchain attestation could
-            // not be checked. Both leave the timestamp pending rather than
-            // claiming a confirmation that was never proven.
-            record.status = TimestampStatus::Pending;
-        }
-
-        Ok(record)
+    } else {
+        // Either the calendar's aggregation transaction has not been mined yet
+        // (normal for hours after stamping) or a blockchain attestation could
+        // not be checked. Both leave the timestamp pending rather than
+        // claiming a confirmation that was never proven.
+        record.status = TimestampStatus::Pending;
     }
 
-    /// Gets the timestamp record for an attachment, if any.
-    ///
-    /// The stored status is reconciled against the proof on disk, so a proof that
-    /// gained a blockchain attestation (for example because an operator verified it
-    /// on another machine) is reported correctly without a re-check.
-    #[command]
-    pub async fn get_timestamp_status(
-        app: AppHandle,
-        attachment_id: String,
-    ) -> Result<Option<TimestampRecord>, String> {
-        let record = get_timestamp_for_attachment(&app, &attachment_id).await?;
-        let Some(mut record) = record else {
-            return Ok(None);
-        };
+    // Persist the outcome so reopening the attachment shows what was checked
+    // without re-running the network-bound verification.
+    crate::opentimestamps::save_verification(
+        &app,
+        &record.id,
+        record.status.clone(),
+        record.block_height,
+        record.block_time.clone(),
+        &record.verification_notes,
+    )
+    .await?;
 
-        let app_config_dir = app
-            .path()
-            .app_config_dir()
-            .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-        let ots_absolute = app_config_dir.join(Path::new(&record.ots_path));
+    Ok(record)
+}
 
-        let Ok(proof) = std::fs::read(&ots_absolute) else {
-            // The database says a proof exists but the file is gone. Report that
-            // honestly instead of showing a status the proof cannot back up.
+/// Gets the timestamp record for an attachment, if any.
+///
+/// The stored status is reconciled against the proof on disk, so a proof that
+/// gained a blockchain attestation (for example because an operator verified it
+/// on another machine) is reported correctly without a re-check.
+#[command]
+pub async fn get_timestamp_status(
+    app: AppHandle,
+    attachment_id: String,
+) -> Result<Option<TimestampRecord>, String> {
+    let record = get_timestamp_for_attachment(&app, &attachment_id).await?;
+    let Some(mut record) = record else {
+        return Ok(None);
+    };
+
+    let app_config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
+    let ots_absolute = app_config_dir.join(Path::new(&record.ots_path));
+
+    let Ok(proof) = std::fs::read(&ots_absolute) else {
+        // The database says a proof exists but the file is gone. Report that
+        // honestly instead of showing a status the proof cannot back up.
+        record.status = TimestampStatus::Failed;
+        record
+            .verification_notes
+            .push("Proof file is missing from disk".to_string());
+        return Ok(Some(record));
+    };
+
+    match crate::opentimestamps::summarize_proof(&proof) {
+        Ok(summary) => {
+            record.block_height = summary.block_height;
+
+            if summary.complete {
+                // The proof carries a blockchain attestation, but this
+                // command does not check it against a real block header —
+                // only `verify_timestamp` does that. Reporting `Confirmed`
+                // here would claim a proof this app never performed, so the
+                // record stays pending until a verification actually passes.
+                record.verification_notes = vec![
+                    "Proof contains a blockchain attestation but it has not been \
+                         verified against a block header"
+                        .to_string(),
+                ];
+                if record.status != TimestampStatus::Confirmed {
+                    record.status = TimestampStatus::Pending;
+                }
+            } else {
+                record.verification_notes = vec![format!(
+                    "Held by {} calendar(s); not yet confirmed",
+                    summary.calendars.len()
+                )];
+                if record.status != TimestampStatus::Confirmed {
+                    record.status = TimestampStatus::Pending;
+                }
+            }
+        }
+        Err(e) => {
             record.status = TimestampStatus::Failed;
             record
                 .verification_notes
-                .push("Proof file is missing from disk".to_string());
-            return Ok(Some(record));
-        };
-
-        match crate::opentimestamps::summarize_proof(&proof) {
-            Ok(summary) => {
-                record.block_height = summary.block_height;
-                record.verification_notes = vec![if summary.complete {
-                    format!(
-                        "Proof contains a blockchain attestation{}",
-                        summary
-                            .block_height
-                            .map(|h| format!(" at block {h}"))
-                            .unwrap_or_default()
-                    )
-                } else {
-                    format!(
-                        "Held by {} calendar(s); not yet confirmed",
-                        summary.calendars.len()
-                    )
-                }];
-
-                // A complete proof means the timestamp is anchored, even if this
-                // app has not run the block-header check yet.
-                if summary.complete {
-                    record.status = TimestampStatus::Confirmed;
-                    if record.confirmed_at.is_none() {
-                        record.confirmed_at = Some(chrono::Utc::now().to_rfc3339());
-                        confirm_timestamp(&app, &record.id).await?;
-                    }
-                }
-            }
-            Err(e) => {
-                record.status = TimestampStatus::Failed;
-                record
-                    .verification_notes
-                    .push(format!("Proof file is unreadable: {e}"));
-            }
+                .push(format!("Proof file is unreadable: {e}"));
         }
-
-        Ok(Some(record))
     }
+
+    Ok(Some(record))
+}

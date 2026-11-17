@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance, Entity, TimestampRecord } from '../types';
-import {
-  SOURCE_TYPES,
-  RELIABILITY_CODES,
-  CREDIBILITY_CODES,
-  RELIABILITY_DEFINITIONS,
-  CREDIBILITY_DEFINITIONS,
-  STANCES,
-  STANCE_DEFINITIONS,
-  STANCE_NONE_LABEL,
-  mediaKind,
-} from '../types';
+import { mediaKind } from '../types';
 import { MediaPreview } from './MediaPreview';
-import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, locksStance, referenceIds, referenceRating, referenceSupplies, selectionOf, type ReferenceSelection } from './ReferenceSelect';
+import { SourceFields } from './SourceFields';
+import { useSourceForm, type SourceFormInitial } from './useSourceForm';
+import { selectionOf } from './ReferenceSelect';
 import { pickFile, type PickerMode } from '../utils/filePicker';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
@@ -72,17 +63,13 @@ export function DetailDrawer({
   verifyTimestamp,
     getTimestampStatus,
   }: DetailDrawerProps) {
-  const [title, setTitle] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('URL');
-  const [url, setUrl] = useState('');
-  const [rawText, setRawText] = useState('');
-  const [reliabilityCode, setReliabilityCode] = useState('');
-  const [credibilityCode, setCredibilityCode] = useState('');
-  const [stance, setStance] = useState('');
-  const [reference, setReference] = useState<ReferenceSelection>({ kind: 'none', id: '' });
-  const [sourceDate, setSourceDate] = useState('');
-  const [sourceTime, setSourceTime] = useState('');
-  const [timeValid, setTimeValid] = useState(true);
+  // The form owns the shared fields; the drawer adds location on top. It is
+  // seeded from the open source, so switching sources remounts the fields.
+  const form = useSourceForm({
+    siblings,
+    entities,
+    initial: source ? toFormInitial(source) : undefined,
+  });
   const [locationLabel, setLocationLabel] = useState('');
   const [coordFormat, setCoordFormat] = useState<CoordinateFormat>('dd');
   // Canonical decimal degrees. The text field is only a rendering of this, so
@@ -106,16 +93,6 @@ export function DetailDrawer({
 
   useEffect(() => {
     if (!source) return;
-    setTitle(source.title);
-    setSourceType(source.source_type);
-    setUrl(source.url ?? '');
-    setRawText(source.raw_text ?? '');
-    setReliabilityCode(source.reliability_code ?? '');
-    setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
-    setStance(source.stance ?? '');
-    setReference(selectionOf(source));
-    setSourceDate(source.source_date ?? '');
-    setSourceTime(source.source_time ?? '');
 
     const location = readLocation(source.custom_metadata);
     setCoord(location ? { lat: location.lat, lon: location.lon } : null);
@@ -233,23 +210,22 @@ export function DetailDrawer({
 
     setSaving(true);
     try {
-      const isReferenced = locksStance(reference);
+      // The form assembles the shared fields; the drawer adds the location.
+      const values = form.values();
+      if (!values) {
+        setSaveError('A title is required.');
+        return;
+      }
+
       await onUpdate(source.id, {
-        title: title.trim(),
-        sourceType,
-        url,
-        rawText,
+        ...values,
         // Empty string / 0 clear the stored rating; the backend maps them to
         // NULL. Sending `undefined` would leave the old value in place.
-        reliabilityCode,
-        credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
-        // A source that duplicates another capture carries no stance; the
-        // backend enforces this too. Meta-referenced sources keep theirs.
-        stance: !isReferenced && stance ? (stance as Stance) : undefined,
-        ...referenceIds(reference),
+        reliabilityCode: values.reliabilityCode ?? '',
+        credibilityCode: values.credibilityCode ?? 0,
         // Empty strings clear the stored values.
-        sourceDate,
-        sourceTime: sourceDate ? sourceTime : '',
+        sourceDate: values.sourceDate ?? '',
+        sourceTime: values.sourceDate ? values.sourceTime ?? '' : '',
         customMetadata,
       });
     } catch (err) {
@@ -442,148 +418,13 @@ export function DetailDrawer({
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-1">Title</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value as SourceType)}
-              className="select"
-            >
-              {SOURCE_TYPES.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">URL</label>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} className="input" placeholder="https://…" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Raw Text</label>
-            <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="textarea" rows={5} />
-          </div>
-
-          <SourceDateTimeFields
-            date={sourceDate}
-            time={sourceTime}
-            onChange={({ date, time }) => {
-              setSourceDate(date);
-              setSourceTime(time);
-            }}
-            onValidityChange={setTimeValid}
+          <SourceFields
+            form={form}
+            siblings={siblings}
+            entities={entities}
+            disabled={saving}
           />
 
-          <section className="card p-4">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Provenance</h3>
-            <ReferenceSelect
-              value={reference}
-              siblings={siblings}
-              entities={entities}
-              disabled={saving}
-              onChange={(next) => {
-                setReference(next);
-                // Mirror the reference's rating as the default. Live sync means
-                // the backend re-applies it on save anyway, but showing the
-                // value here makes the inheritance visible before committing.
-                // An entity only supplies reliability, so the operator's
-                // credibility assessment is left untouched.
-                const rating = referenceRating(next, siblings, entities);
-                const supplies = referenceSupplies(next);
-                if (supplies.reliability) {
-                  setReliabilityCode(rating?.reliability_code ?? '');
-                }
-                if (supplies.credibility) {
-                  setCredibilityCode(
-                    rating?.credibility_code ? String(rating.credibility_code) : ''
-                  );
-                }
-                // Only a duplicate of another capture loses its stance.
-                if (locksStance(next)) setStance('');
-              }}
-            />
-          </section>
-
-          <section className="card p-4">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">NATO Admiralty Rating</h3>
-
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Source Reliability (A–F)</label>
-              <select value={reliabilityCode} onChange={(e) => setReliabilityCode(e.target.value)} className="select">
-                <option value="">Not rated</option>
-                {RELIABILITY_CODES.map(code => (
-                  <option key={code} value={code}>{RELIABILITY_DEFINITIONS[code].label}</option>
-                ))}
-              </select>
-              {reliabilityCode && (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {RELIABILITY_DEFINITIONS[reliabilityCode as keyof typeof RELIABILITY_DEFINITIONS].description}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="source-credibility" className="block text-xs font-medium text-zinc-400 mb-1">
-                Information Credibility (1–6)
-              </label>
-              <select
-                id="source-credibility"
-                value={credibilityCode}
-                onChange={(e) => setCredibilityCode(e.target.value)}
-                className="select"
-              >
-                <option value="">Not rated</option>
-                {CREDIBILITY_CODES.map(code => (
-                  <option key={code} value={code}>{CREDIBILITY_DEFINITIONS[code].label}</option>
-                ))}
-              </select>
-              {credibilityCode && (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {CREDIBILITY_DEFINITIONS[Number(credibilityCode) as keyof typeof CREDIBILITY_DEFINITIONS].description}
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="card p-4">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance</h3>
-              <select
-                value={locksStance(reference) ? '' : stance}
-                onChange={(e) => setStance(e.target.value)}
-                className="select"
-                disabled={locksStance(reference)}
-                title={
-                  locksStance(reference)
-                    ? 'A source that duplicates another capture carries no stance'
-                    : undefined
-                }
-              >
-                <option value="">{STANCE_NONE_LABEL}</option>
-                {STANCES.map(value => (
-                  <option key={value} value={value}>{STANCE_DEFINITIONS[value].label}</option>
-                ))}
-              </select>
-              {locksStance(reference) ? (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Locked to none while this source references another capture. A duplicate must
-                  not count as independent corroboration.
-                </p>
-              ) : stance ? (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {STANCE_DEFINITIONS[stance as Stance].description}
-                </p>
-              ) : (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  No stance recorded. Use this when the source does not bear on the event.
-                </p>
-              )}
-            </section>
 
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -724,7 +565,7 @@ export function DetailDrawer({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
               Close
             </button>
-            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim() || !timeValid}>
+            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !form.canSubmit}>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -765,4 +606,20 @@ function parseMetadata(raw: string): SourceCustomMetadata {
     // fall through
   }
   return {};
+}
+
+/** Projects a stored source onto the shared form's initial values. */
+function toFormInitial(source: SourceWithAttachments): SourceFormInitial {
+  return {
+    title: source.title,
+    sourceType: source.source_type,
+    url: source.url,
+    rawText: source.raw_text,
+    reliabilityCode: source.reliability_code,
+    credibilityCode: source.credibility_code,
+    stance: source.stance,
+    reference: selectionOf(source),
+    sourceDate: source.source_date,
+    sourceTime: source.source_time,
+  };
 }

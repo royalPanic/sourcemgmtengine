@@ -6,15 +6,23 @@ import { DetailDrawer } from './components/DetailDrawer';
 import { NewContainerModal } from './components/NewContainerModal';
 import { EntitiesPanel } from './components/EntitiesPanel';
 import { EntityDetailDrawer } from './components/EntityDetailDrawer';
+import { LoadErrorBanner } from './components/LoadErrorBanner';
 import { useCases } from './hooks/useCases';
 import { useSources } from './hooks/useSources';
 import { useEntities } from './hooks/useEntities';
 import { useEntityTypes } from './hooks/useEntityTypes';
 import { useEntityQualities } from './hooks/useEntities';
-import type { SourceWithAttachments, Entity } from './types';
+import type { SourceWithAttachments, Entity, EntityTypeQuality } from './types';
 
 function App() {
-  const { cases, loading, createCase, updateCase, deleteCase } = useCases();
+  const {
+    cases,
+    loading,
+    error: casesError,
+    createCase,
+    updateCase,
+    deleteCase,
+  } = useCases();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSource, setDrawerSource] = useState<SourceWithAttachments | null>(null);
@@ -26,6 +34,8 @@ function App() {
   const {
     sources,
     loading: sourcesLoading,
+    error: sourcesError,
+    reloadQuietly: reloadSourcesQuietly,
     createSource,
     updateSource,
     deleteSource,
@@ -48,17 +58,30 @@ function App() {
   const {
     entities,
     loading: entitiesLoading,
+    error: entitiesError,
     createEntity,
     updateEntity,
     deleteEntity,
   } = useEntities(selectedCaseId);
 
-  const { qualities: entityQualities, loadQualities: reloadQualities } = useEntityQualities(selectedEntity?.id ?? null);
+  const { qualities: entityQualities, error: qualitiesError, loadQualities: reloadQualities } = useEntityQualities(selectedEntity?.id ?? null);
 
   const {
     types: entityTypes,
     loading: entityTypesLoading,
+    error: entityTypesError,
+    createType: createEntityType,
+    updateType: updateEntityType,
+    deleteType: deleteEntityType,
   } = useEntityTypes();
+
+  // A failed read leaves the affected view empty, which is indistinguishable
+  // from "nothing here yet" without saying so. The first failure wins: it is
+  // the one that caused the visible gap.
+  const loadError =
+    [casesError, sourcesError, entitiesError, entityTypesError, qualitiesError].find(
+      (message): message is string => Boolean(message)
+    ) ?? null;
 
   const selectedCase = cases.find(c => c.id === selectedCaseId) ?? null;
 
@@ -127,6 +150,27 @@ function App() {
     }
   };
 
+  const handleCreateEntityType = async (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => {
+    await createEntityType(params);
+  };
+
+  const handleUpdateEntityType = async (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => {
+    await updateEntityType(id, params);
+  };
+
+  const handleDeleteEntityType = async (id: string) => {
+    await deleteEntityType(id);
+  };
+
   const handleCreateQuality = async (params: {
     entityId: string;
     qualityName: string;
@@ -150,6 +194,7 @@ function App() {
       valueAddress: params.valueAddress ?? undefined,
     });
     await reloadQualities();
+    await reloadSourcesQuietly();
   };
 
   const handleUpdateQuality = async (id: string, params: Partial<{
@@ -165,19 +210,21 @@ function App() {
     await qualitiesApi.update(id, {
       qualityName: params.qualityName ?? undefined,
       qualityType: params.qualityType as import('./types').QualityType | undefined,
-      valueString: params.valueString ?? undefined,
-      valueInteger: params.valueInteger ?? undefined,
-      valueBoolean: params.valueBoolean ?? undefined,
-      valueDate: params.valueDate ?? undefined,
-      valueCoordinates: params.valueCoordinates ?? undefined,
-      valueAddress: params.valueAddress ?? undefined,
+      valueString: params.valueString,
+      valueInteger: params.valueInteger,
+      valueBoolean: params.valueBoolean,
+      valueDate: params.valueDate,
+      valueCoordinates: params.valueCoordinates,
+      valueAddress: params.valueAddress,
     });
     await reloadQualities();
+    await reloadSourcesQuietly();
   };
 
   const handleDeleteQuality = async (id: string) => {
     await qualitiesApi.delete(id);
     await reloadQualities();
+    await reloadSourcesQuietly();
   };
 
   const handleAddQualitySourceRef = async (params: {
@@ -230,6 +277,7 @@ function App() {
         onDeleteCase={handleDeleteCase}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
+        <LoadErrorBanner message={loadError} />
         {view === 'entities' ? (
           <EntitiesPanel
             selectedCaseId={selectedCaseId}
@@ -240,6 +288,10 @@ function App() {
             onCreateEntity={handleCreateEntity}
             onDeleteEntity={handleDeleteEntity}
             onOpenEntityDetail={handleOpenEntityDetail}
+            selectedEntityId={selectedEntity?.id ?? null}
+            onCreateType={handleCreateEntityType}
+            onUpdateType={handleUpdateEntityType}
+            onDeleteType={handleDeleteEntityType}
           />
         ) : (
           <MainContent
@@ -252,15 +304,15 @@ function App() {
             entityTypes={entityTypes}
             onUpdateContainer={updateCase}
             onCreateSource={createSource}
-            onUpdateSource={updateSource}
             onDeleteSource={deleteSource}
-            onImportAttachment={importAttachment}
-            onDeleteAttachment={deleteAttachment}
-            onOpenAttachment={openAttachment}
             onOpenSourceDetail={handleOpenSourceDetail}
             onCreateEntity={handleCreateEntity}
             onDeleteEntity={handleDeleteEntity}
             onOpenEntityDetail={handleOpenEntityDetail}
+            selectedEntityId={selectedEntity?.id ?? null}
+            onCreateType={handleCreateEntityType}
+            onUpdateType={handleUpdateEntityType}
+            onDeleteType={handleDeleteEntityType}
           />
         )}
       </div>

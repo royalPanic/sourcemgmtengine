@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { EntityQualityWithRefs, QualitySourceRef, QualityType } from '../types';
+import type { EntityQualityWithRefs, QualityType } from '../types';
 import {
   RELIABILITY_CODES,
   RELIABILITY_DEFINITIONS,
 } from '../types';
+import { averageQualityRefs } from '../utils/analytics';
 
 interface EntityQualityEditorProps {
   quality: EntityQualityWithRefs | null;
@@ -111,9 +112,7 @@ export function EntityQualityEditor({
 
   if (!quality) return null;
 
-  const { reliability, credibility } = quality.source_refs.length > 0
-    ? computeAverage(quality.source_refs)
-    : { reliability: null, credibility: null };
+  const { reliability, credibility } = averageQualityRefs(quality.source_refs);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -222,7 +221,6 @@ export function EntityQualityEditor({
                   value={valueString}
                   onChange={(e) => setValueString(e.target.value)}
                   className="select"
-                  required
                 >
                   <option value="">Not rated</option>
                   {RELIABILITY_CODES.map(code => (
@@ -232,7 +230,7 @@ export function EntityQualityEditor({
                   ))}
                 </select>
                 <p className="text-[10px] text-zinc-500 mt-1">
-                  A reliability quality needs a code to propagate to citing sources.
+                  Choose a code to propagate to citing sources, or leave it not rated.
                 </p>
               </>
             )}
@@ -353,30 +351,3 @@ const QUALITY_TYPE_OPTIONS: { value: QualityType; label: string }[] = [
   { value: 'address', label: 'Address' },
   { value: 'reliability', label: 'Reliability (A–F)' },
 ];
-
-function computeAverage(refs: QualitySourceRef[]): {
-  reliability: string | null;
-  credibility: string | null;
-} {
-  const reliabilityScores: number[] = [];
-  const credibilityScores: number[] = [];
-
-  for (const ref_ of refs) {
-    if (ref_.reliability_code) {
-      const score = ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(ref_.reliability_code) + 1;
-      if (score > 0) reliabilityScores.push(score);
-    }
-    if (ref_.credibility_code != null) {
-      credibilityScores.push(ref_.credibility_code);
-    }
-  }
-
-  const reliability = reliabilityScores.length > 0
-    ? ['A', 'B', 'C', 'D', 'E', 'F'][Math.round(reliabilityScores.reduce((a, b) => a + b, 0) / reliabilityScores.length) - 1]
-    : null;
-  const credibility = credibilityScores.length > 0
-    ? Math.round(credibilityScores.reduce((a, b) => a + b, 0) / credibilityScores.length).toString()
-    : null;
-
-  return { reliability, credibility };
-}

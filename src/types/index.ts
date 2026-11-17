@@ -1,5 +1,3 @@
-export type ContainerKind = 'case';
-
 /** How a source bears on the event it belongs to. `null` = none / not applicable. */
 export type Stance = 'supports' | 'refutes' | 'neutral';
 
@@ -7,7 +5,6 @@ export interface Case {
   id: string;
   title: string;
   description: string | null;
-  kind: ContainerKind;
   /** Calendar date, `YYYY-MM-DD`. Optional for any case. */
   event_date: string | null;
   /** Wall-clock time, `HH:MM`. Optional even for events. */
@@ -198,12 +195,17 @@ export interface EntityTypeQuality {
   required: boolean;
 }
 
-/** An entity type template, loaded from a JSON file. */
+/** An entity type template.
+ *
+ * Built-in templates are seeded from JSON on first run; after that every
+ * template is a row the type designer can edit. */
 export interface EntityType {
   id: string;
   name: string;
   description: string | null;
   default_qualities: EntityTypeQuality[];
+  /** True for the templates that ship with the app. They can be edited but not deleted. */
+  is_builtin: boolean;
 }
 
 /** A stored entity. */
@@ -284,36 +286,4 @@ export function formatQualityValue(
     default:
       return quality.value_string ?? '—';
   }
-}
-
-/** Computes the average Admiralty rating for a quality's source references. */
-export function admiraltyAverage(refs: QualitySourceRef[]): {
-  reliability: ReliabilityCode | null;
-  credibility: CredibilityCode | null;
-} {
-  if (refs.length === 0) {
-    return { reliability: null, credibility: null };
-  }
-
-  const reliabilityScores: number[] = [];
-  const credibilityScores: number[] = [];
-
-  for (const ref_ of refs) {
-    if (ref_.reliability_code) {
-      const score = RELIABILITY_CODES.indexOf(ref_.reliability_code) + 1;
-      if (score > 0) reliabilityScores.push(score);
-    }
-    if (ref_.credibility_code != null) {
-      credibilityScores.push(ref_.credibility_code);
-    }
-  }
-
-  const avgReliability = reliabilityScores.length > 0
-    ? RELIABILITY_CODES[Math.round(reliabilityScores.reduce((a, b) => a + b, 0) / reliabilityScores.length) - 1]
-    : null;
-  const avgCredibility = credibilityScores.length > 0
-    ? Math.round(credibilityScores.reduce((a, b) => a + b, 0) / credibilityScores.length) as CredibilityCode
-    : null;
-
-  return { reliability: avgReliability, credibility: avgCredibility };
 }

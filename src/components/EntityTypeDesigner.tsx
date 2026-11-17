@@ -3,10 +3,26 @@ import type { EntityType, EntityTypeQuality, QualityType } from '../types';
 
 interface EntityTypeDesignerProps {
   types: EntityType[];
-  onClose: () => void;
+  onCreate: (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => Promise<void>;
+  onUpdate: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
-export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) {
+export function EntityTypeDesigner({
+  types,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: EntityTypeDesignerProps) {
   const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list');
   const [editingType, setEditingType] = useState<EntityType | null>(null);
   const [newTypeId, setNewTypeId] = useState('');
@@ -39,6 +55,7 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
     setNewQualityName('');
     setNewQualityType('string');
     setNewQualityRequired(false);
+    setError(null);
   };
 
   const handleEditType = (type: EntityType) => {
@@ -48,11 +65,13 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
     setNewTypeName(type.name);
     setNewTypeDescription(type.description ?? '');
     setQualities(type.default_qualities);
+    setError(null);
   };
 
   const handleBackToList = () => {
     setMode('list');
     setEditingType(null);
+    setError(null);
   };
 
   const handleAddQuality = () => {
@@ -73,21 +92,60 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
 
   const handleSaveType = async () => {
     setError(null);
+
+    const id = newTypeId.trim();
+    const name = newTypeName.trim();
+    if (!id || !name) {
+      setError('Type ID and name are required');
+      return;
+    }
+
+    // A quality with no name would be invisible in the list, so refuse it here
+    // rather than letting the backend reject the whole save.
+    const unnamed = qualities.find(q => !q.name.trim());
+    if (unnamed) {
+      setError('Every default quality needs a name');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      if (!newTypeId.trim() || !newTypeName.trim()) {
-        setError('Type ID and name are required');
-        return;
+      if (editingType) {
+        await onUpdate(editingType.id, {
+          name,
+          description: newTypeDescription.trim(),
+          defaultQualities: qualities,
+        });
+      } else {
+        await onCreate({
+          id,
+          name,
+          description: newTypeDescription.trim() || undefined,
+          defaultQualities: qualities,
+        });
       }
-      // In a full implementation this would call a backend command to persist
-      // the template. For now we just validate and close.
-      console.log('Saving entity type:', {
-        id: newTypeId,
-        name: newTypeName,
-        description: newTypeDescription,
-        default_qualities: qualities,
-      });
-      onClose();
+      // Back to the list so the saved template is visible.
+      setMode('list');
+      setEditingType(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (type: EntityType) => {
+    setError(null);
+    if (!window.confirm(`Delete the entity type "${type.name}"?`)) return;
+
+    setSubmitting(true);
+    try {
+      await onDelete(type.id);
+      // The open editor points at the row that just disappeared.
+      if (editingType?.id === type.id) {
+        setMode('list');
+        setEditingType(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -137,10 +195,33 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
                       <span className="text-[10px] px-1.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
                         {type.id}
                       </span>
+                      {type.is_builtin && (
+                        <span className="text-[10px] px-1.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          Built-in
+                        </span>
+                      )}
                     </div>
-                    <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2-11-4z" />
-                    </svg>
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2-11-4z" />
+                      </svg>
+                      {!type.is_builtin && (
+                        <button
+                          type="button"
+                          className="btn-ghost p-1.5 text-red-400 hover:bg-red-600/20"
+                          title={`Delete ${type.name}`}
+                          disabled={submitting}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDelete(type);
+                          }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {type.description && (
                     <p className="text-xs text-zinc-500 mb-2">{type.description}</p>
@@ -162,6 +243,8 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
               ))}
             </div>
           )}
+
+          {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
         </div>
       </div>
     );
@@ -197,9 +280,14 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
               onChange={(e) => setNewTypeId(e.target.value)}
               className="input font-mono text-xs"
               placeholder="e.g. person, organization, vehicle"
+              // The id is stored on every entity of this type, so renaming it
+              // would orphan them. Create-time only.
+              readOnly={editingType !== null}
             />
             <p className="text-[10px] text-zinc-500 mt-1">
-              Machine-readable identifier used in the database and JSON template file.
+              {editingType
+                ? 'The type ID is fixed once entities use it.'
+                : 'Machine-readable identifier used in the database and JSON template file.'}
             </p>
           </div>
           <div className="mb-3">
@@ -307,6 +395,16 @@ export function EntityTypeDesigner({ types, onClose }: EntityTypeDesignerProps) 
         {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
 
         <div className="flex justify-end gap-3">
+          {editingType && !editingType.is_builtin && (
+            <button
+              type="button"
+              className="btn-ghost text-red-400 hover:text-red-300 mr-auto"
+              onClick={() => void handleDelete(editingType)}
+              disabled={submitting}
+            >
+              Delete Type
+            </button>
+          )}
           <button
             type="button"
             className="btn-secondary"

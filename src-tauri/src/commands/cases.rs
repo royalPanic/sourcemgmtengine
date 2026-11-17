@@ -1,20 +1,18 @@
-use tauri::{command, AppHandle};
-use sqlx::Row;
 use chrono::Utc;
+use sqlx::Row;
+use tauri::{command, AppHandle};
 
 use crate::database::pool;
-use crate::models::models::{Case, CaseNote, ContainerKind};
+use crate::models::models::{Case, CaseNote};
 use crate::validation::{is_hh_mm, is_iso_date, patch_optional};
 
-const CASE_COLUMNS: &str = "id, title, description, kind, event_date, event_time, created_at, updated_at";
+const CASE_COLUMNS: &str = "id, title, description, event_date, event_time, created_at, updated_at";
 
 fn case_from_row(row: &sqlx::sqlite::SqliteRow) -> Case {
-    let kind: String = row.get("kind");
     Case {
         id: row.get("id"),
         title: row.get("title"),
         description: row.get("description"),
-        kind: ContainerKind::from_db(&kind),
         event_date: row.get("event_date"),
         event_time: row.get("event_time"),
         created_at: row.get("created_at"),
@@ -36,13 +34,12 @@ async fn fetch_case(app: &AppHandle, id: &str) -> Result<Option<Case>, String> {
 
 async fn fetch_case_note(app: &AppHandle, case_id: &str) -> Result<Option<CaseNote>, String> {
     let pool = pool::pool(app).await?;
-    let row = sqlx::query(
-        "SELECT id, case_id, content, updated_at FROM case_notes WHERE case_id = ?",
-    )
-    .bind(case_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| format!("Failed to get case note: {}", e))?;
+    let row =
+        sqlx::query("SELECT id, case_id, content, updated_at FROM case_notes WHERE case_id = ?")
+            .bind(case_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| format!("Failed to get case note: {}", e))?;
 
     Ok(row.map(|row| CaseNote {
         id: row.get("id"),
@@ -88,16 +85,17 @@ pub async fn create_case(
     validate_event_fields(&event_date, &event_time)?;
 
     let pool = pool::pool(&app).await?;
-    let case = Case::new(title, description, ContainerKind::Case, event_date, event_time);
+    let case = Case::new(title, description, event_date, event_time);
     let now = Utc::now().to_rfc3339();
 
+    // `kind` is left at its DEFAULT: the column is a leftover from the
+    // case/event split and every container is a plain case.
     sqlx::query(
-        "INSERT INTO cases (id, title, description, kind, event_date, event_time, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO cases (id, title, description, event_date, event_time, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&case.id)
     .bind(&case.title)
     .bind(&case.description)
-    .bind(case.kind.as_db())
     .bind(&case.event_date)
     .bind(&case.event_time)
     .bind(&now)
@@ -107,16 +105,14 @@ pub async fn create_case(
     .map_err(|e| format!("Failed to create case: {}", e))?;
 
     let note = CaseNote::new(case.id.clone(), String::new());
-    sqlx::query(
-        "INSERT INTO case_notes (id, case_id, content, updated_at) VALUES (?, ?, ?, ?)",
-    )
-    .bind(&note.id)
-    .bind(&note.case_id)
-    .bind(&note.content)
-    .bind(&note.updated_at)
-    .execute(&pool)
-    .await
-    .map_err(|e| format!("Failed to create case note: {}", e))?;
+    sqlx::query("INSERT INTO case_notes (id, case_id, content, updated_at) VALUES (?, ?, ?, ?)")
+        .bind(&note.id)
+        .bind(&note.case_id)
+        .bind(&note.content)
+        .bind(&note.updated_at)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to create case note: {}", e))?;
 
     Ok(case)
 }
@@ -221,6 +217,26 @@ pub async fn update_case(
 #[command]
 pub async fn delete_case(app: AppHandle, id: String) -> Result<(), String> {
     let pool = pool::pool(&app).await?;
+
+    // Remove the files before the rows: once the rows are gone there is no
+    // record of where the bytes live, and the attachment store would grow
+    // without bound.
+    let paths: Vec<String> = sqlx::query_scalar(
+        "SELECT relative_path FROM source_attachments \
+         WHERE source_id IN (SELECT id FROM sources WHERE case_id = ?)",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| format!("Failed to list case attachments: {}", e))?;
+
+    for relative_path in &paths {
+        if let Err(e) = crate::commands::files::remove_attachment_files(&app, relative_path) {
+            // A file that cannot be removed must not block the row delete, or
+            // the operator can never get rid of the case at all.
+            eprintln!("Failed to remove attachment {relative_path}: {e}");
+        }
+    }
 
     // Delete children explicitly: SQLite only enforces ON DELETE CASCADE when
     // `PRAGMA foreign_keys = ON` is set on the connection.

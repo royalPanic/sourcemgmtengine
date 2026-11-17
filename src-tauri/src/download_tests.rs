@@ -7,7 +7,8 @@
 #[cfg(test)]
 mod tests {
     use crate::commands::files::{
-        classify_url, extract_image_url, parse_reported_path, yt_dlp_args, UrlKind,
+        classify_url, extract_image_url, guard_url, parse_reported_path, resolve_redirect_target,
+        sanitize_file_name, yt_dlp_args, UrlKind,
     };
     use sqlx::sqlite::SqlitePoolOptions;
 
@@ -122,7 +123,8 @@ mod tests {
         let args = yt_dlp_args("https://example.com/v", "/tmp/out.%(ext)s");
         let format = args.iter().position(|a| a == "-f").expect("-f flag");
         assert_eq!(
-            args[format + 1], "bv*+ba/b",
+            args[format + 1],
+            "bv*+ba/b",
             "video+audio must be preferred, with the best single file as fallback"
         );
     }
@@ -213,7 +215,8 @@ mod tests {
 
     #[test]
     fn html_entities_in_an_image_url_are_decoded() {
-        let html = r#"<meta property="og:image" content="https://cdn.example.com/a.png?x=1&amp;y=2">"#;
+        let html =
+            r#"<meta property="og:image" content="https://cdn.example.com/a.png?x=1&amp;y=2">"#;
         assert_eq!(
             extract_image_url(html, "https://example.com/").as_deref(),
             Some("https://cdn.example.com/a.png?x=1&y=2")
@@ -227,9 +230,25 @@ mod tests {
     }
 
     #[test]
+    fn relative_redirects_resolve_against_the_current_url() {
+        let current = url::Url::parse("https://example.com/news/story").unwrap();
+        let target = resolve_redirect_target(&current, "../media/photo.png").unwrap();
+        assert_eq!(target.as_str(), "https://example.com/media/photo.png");
+    }
+
+    #[test]
+    fn redirects_cannot_change_to_an_unsupported_scheme() {
+        let current = url::Url::parse("https://example.com/news/story").unwrap();
+        assert!(resolve_redirect_target(&current, "file:///private/data").is_err());
+    }
+
+    #[test]
     fn a_page_without_images_yields_none() {
         assert_eq!(
-            extract_image_url("<html><body>No images here</body></html>", "https://example.com/"),
+            extract_image_url(
+                "<html><body>No images here</body></html>",
+                "https://example.com/"
+            ),
             None
         );
     }
@@ -242,5 +261,89 @@ mod tests {
             extract_image_url(html, "https://example.com/").as_deref(),
             Some("https://example.com/real.png")
         );
+    }
+
+    #[test]
+    fn sanitizing_strips_path_separators_and_control_characters() {
+        assert_eq!(sanitize_file_name("photo.png"), "photo.png");
+        assert_eq!(sanitize_file_name("../../etc/passwd"), "passwd");
+        assert_eq!(sanitize_file_name("dir\\file.txt"), "file.txt");
+        assert_eq!(sanitize_file_name("bad\nname.txt"), "badname.txt");
+    }
+
+    #[test]
+    fn sanitizing_drops_the_colon_that_marks_an_alternate_data_stream() {
+        // `photo.png:evil` would be an NTFS alternate stream on the base file,
+        // not a file of its own, so the colon has to go.
+        assert_eq!(sanitize_file_name("photo.png:evil"), "photo.pngevil");
+        // A drive prefix is not a file name at all, so only the tail survives.
+        assert_eq!(sanitize_file_name("C:photo.png"), "photo.png");
+    }
+
+    #[test]
+    fn sanitizing_trims_trailing_dots_and_spaces() {
+        // Windows strips these, so leaving them would collide with the base name.
+        assert_eq!(sanitize_file_name("photo.png."), "photo.png");
+        assert_eq!(sanitize_file_name("photo.png "), "photo.png");
+    }
+
+    #[test]
+    fn sanitizing_prefixes_reserved_device_names() {
+        assert_eq!(sanitize_file_name("CON"), "_CON");
+        assert_eq!(sanitize_file_name("nul.txt"), "_nul.txt");
+        assert_eq!(sanitize_file_name("COM1"), "_COM1");
+        // A name that merely starts with a reserved stem is fine.
+        assert_eq!(sanitize_file_name("CONSULTANT.txt"), "CONSULTANT.txt");
+    }
+
+    #[test]
+    fn sanitizing_falls_back_when_nothing_usable_remains() {
+        assert_eq!(sanitize_file_name("..."), "file");
+        assert_eq!(sanitize_file_name("   "), "file");
+        assert_eq!(sanitize_file_name(""), "file");
+    }
+
+    #[test]
+    fn the_guard_refuses_loopback_addresses() {
+        for url in [
+            "http://127.0.0.1:8080/admin",
+            "http://localhost:3000/",
+            "http://[::1]:9000/",
+        ] {
+            assert!(
+                guard_url(url).is_err(),
+                "loopback URL must be refused: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_guard_refuses_private_and_link_local_addresses() {
+        for url in [
+            "http://10.0.0.1/",
+            "http://192.168.1.1/",
+            "http://172.16.0.1/",
+            // The cloud metadata endpoint is link-local.
+            "http://169.254.169.254/latest/meta-data/",
+            // CGNAT and the unspecified address are not routable either.
+            "http://100.64.0.1/",
+            "http://0.0.0.0/",
+        ] {
+            assert!(
+                guard_url(url).is_err(),
+                "non-public URL must be refused: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_guard_refuses_ipv4_mapped_loopback() {
+        // ::ffff:127.0.0.1 must not slip past the IPv4 checks.
+        assert!(guard_url("http://[::ffff:127.0.0.1]/").is_err());
+    }
+
+    #[test]
+    fn the_guard_rejects_a_url_without_a_host() {
+        assert!(guard_url("file:///etc/passwd").is_err());
     }
 }

@@ -6,7 +6,7 @@ import {
   formatAverage,
   scoreToBarPercent,
   isReferenceLinked,
-  isEntityReferenced,
+
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -236,10 +236,6 @@ describe('reference-linked sources', () => {
     expect(isReferenceLinked(source(null, null, null))).toBe(false);
     expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
     expect(isReferenceLinked(citing({ reference_entity_id: 'b' }))).toBe(false);
-
-    expect(isEntityReferenced(source(null, null, null))).toBe(false);
-        expect(isEntityReferenced(citing({ reference_entity_id: 'b' }))).toBe(true);
-        expect(isEntityReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
   });
 });
 
@@ -265,7 +261,7 @@ describe('scoreToBarPercent', () => {
   it('decreases monotonically as the score worsens', () => {
     const percents = [1, 2, 3, 4, 5, 6].map(score => scoreToBarPercent(score, 6));
     for (let i = 1; i < percents.length; i += 1) {
-      expect(percents[i]).toBeLessThan(percents[i - 1]);
+      expect(percents[i]!).toBeLessThan(percents[i - 1]!);
     }
   });
 

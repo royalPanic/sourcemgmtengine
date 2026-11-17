@@ -7,7 +7,6 @@ const mockCase: Case = {
   id: 'case-1',
   title: 'Test Case',
   description: 'A test case',
-  kind: 'case',
   event_date: null,
   event_time: null,
   created_at: '2026-01-01T00:00:00Z',
@@ -18,7 +17,6 @@ const mockCaseWithDate: Case = {
   id: 'case-2',
   title: 'Test Case with Date',
   description: 'A case with date/time',
-  kind: 'case',
   event_date: '2026-05-01',
   event_time: '19:30',
   created_at: '2026-01-01T00:00:00Z',
@@ -169,7 +167,7 @@ describe('Sidebar', () => {
     // Confirm deletion in the dialog - click the "Delete" button in the dialog
     // The dialog has a "Delete" button with btn-ghost class
     const deleteButtons = screen.getAllByRole('button', { name: /Delete/ });
-    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]!);
     
     expect(onDeleteCase).toHaveBeenCalledWith('case-1');
   });

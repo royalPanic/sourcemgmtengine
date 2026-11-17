@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { entitiesApi, qualitiesApi, qualitySourceRefsApi } from '../api/tauri';
-import type { Entity, EntityQualityWithRefs, QualitySourceRef, QualityType, ReliabilityCode, CredibilityCode } from '../types';
+import { entitiesApi, qualitiesApi } from '../api/tauri';
+import type { Entity, EntityQualityWithRefs, QualityType } from '../types';
 
 export function useEntities(caseId: string | null, isGlobal?: boolean) {
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -130,12 +130,12 @@ export function useEntityQualities(entityId: string | null) {
     const updated = await qualitiesApi.update(id, {
       qualityName: params.qualityName ?? undefined,
       qualityType: params.qualityType ?? undefined,
-      valueString: params.valueString ?? undefined,
-      valueInteger: params.valueInteger ?? undefined,
-      valueBoolean: params.valueBoolean ?? undefined,
-      valueDate: params.valueDate ?? undefined,
-      valueCoordinates: params.valueCoordinates ?? undefined,
-      valueAddress: params.valueAddress ?? undefined,
+      valueString: params.valueString,
+      valueInteger: params.valueInteger,
+      valueBoolean: params.valueBoolean,
+      valueDate: params.valueDate,
+      valueCoordinates: params.valueCoordinates,
+      valueAddress: params.valueAddress,
     });
     await loadQualities();
     return updated;
@@ -154,58 +154,5 @@ export function useEntityQualities(entityId: string | null) {
     createQuality,
     updateQuality,
     deleteQuality,
-  };
-}
-
-export function useQualitySourceRefs(qualityId: string | null) {
-  const [refs, setRefs] = useState<QualitySourceRef[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadRefs = useCallback(async () => {
-    if (!qualityId) {
-      setRefs([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const data = await qualitySourceRefsApi.getAll(qualityId);
-      setRefs(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load source references');
-    } finally {
-      setLoading(false);
-    }
-  }, [qualityId]);
-
-  useEffect(() => {
-    loadRefs();
-  }, [loadRefs]);
-
-  const addRef = async (params: {
-    qualityId: string;
-    sourceId: string;
-    reliabilityCode?: ReliabilityCode;
-    credibilityCode?: CredibilityCode;
-  }) => {
-    const created = await qualitySourceRefsApi.add(params);
-    setRefs(prev => [...prev, created]);
-    return created;
-  };
-
-  const removeRef = async (id: string) => {
-    await qualitySourceRefsApi.remove(id);
-    setRefs(prev => prev.filter(r => r.id !== id));
-  };
-
-  return {
-    refs,
-    loading,
-    error,
-    loadRefs,
-    addRef,
-    removeRef,
   };
 }

@@ -1,23 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A case. All cases can optionally carry a date/time.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ContainerKind {
-    Case,
-}
-
-impl ContainerKind {
-    pub fn from_db(_value: &str) -> Self {
-        ContainerKind::Case
-    }
-
-    pub fn as_db(&self) -> &'static str {
-        "case"
-    }
-}
-
 /// How a source bears on the event it belongs to.
 ///
 /// `None` (the absence of a stance) means "none / not applicable" and is the
@@ -59,7 +42,7 @@ pub enum ReferenceKind {
 
 /// A resolved reference, with enough information for the UI to show what a
 /// source cites without a second round trip.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SourceReference {
     pub kind: ReferenceKind,
     pub id: String,
@@ -73,7 +56,6 @@ pub struct Case {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
-    pub kind: ContainerKind,
     pub event_date: Option<String>,
     pub event_time: Option<String>,
     pub created_at: String,
@@ -181,7 +163,6 @@ impl Case {
     pub fn new(
         title: String,
         description: Option<String>,
-        kind: ContainerKind,
         event_date: Option<String>,
         event_time: Option<String>,
     ) -> Self {
@@ -190,7 +171,6 @@ impl Case {
             id: Uuid::new_v4().to_string(),
             title,
             description,
-            kind,
             event_date,
             event_time,
             created_at: now.clone(),

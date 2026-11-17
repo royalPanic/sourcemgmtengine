@@ -171,6 +171,8 @@ export function parseDms(input: string): { lat: number; lon: number } | null {
 
   while ((match = pattern.exec(input)) !== null) {
     const [, deg, min, sec, dir] = match;
+    // The regex guarantees a direction letter, but the tuple type does not.
+    if (!dir) break;
     const magnitude =
       Math.abs(Number(deg)) + (min ? Number(min) / 60 : 0) + (sec ? Number(sec) / 3600 : 0);
     found.push({ value: magnitude, direction: dir.toUpperCase() });
@@ -223,7 +225,9 @@ export function parseCoordinateIn(
       case 'dd': {
         const parts = text.split(/[,\s]+/).filter(Boolean).map(Number);
         if (parts.length !== 2 || parts.some(Number.isNaN)) return null;
-        return { lat: parts[0], lon: parts[1] };
+        const [lat, lon] = parts;
+        if (lat === undefined || lon === undefined) return null;
+        return { lat, lon };
       }
       case 'dms':
         return parseDms(text);

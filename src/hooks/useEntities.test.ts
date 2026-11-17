@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useEntities, useEntityQualities, useQualitySourceRefs } from './useEntities';
-import { entitiesApi, qualitiesApi, qualitySourceRefsApi } from '../api/tauri';
-import type { Entity, EntityQualityWithRefs, QualitySourceRef } from '../types';
+import { useEntities, useEntityQualities } from './useEntities';
+import { entitiesApi, qualitiesApi } from '../api/tauri';
+import type { Entity, EntityQualityWithRefs } from '../types';
 
 vi.mock('../api/tauri', () => ({
   entitiesApi: {
@@ -17,11 +17,6 @@ vi.mock('../api/tauri', () => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
-  },
-  qualitySourceRefsApi: {
-    getAll: vi.fn(),
-    add: vi.fn(),
-    remove: vi.fn(),
   },
 }));
 
@@ -38,12 +33,6 @@ const mockQualitiesApi = qualitiesApi as unknown as {
   create: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
-};
-
-const mockQualitySourceRefsApi = qualitySourceRefsApi as unknown as {
-  getAll: ReturnType<typeof vi.fn>;
-  add: ReturnType<typeof vi.fn>;
-  remove: ReturnType<typeof vi.fn>;
 };
 
 const mockEntity: Entity = {
@@ -71,16 +60,6 @@ const mockQuality: EntityQualityWithRefs = {
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
   source_refs: [],
-};
-
-const mockRef: QualitySourceRef = {
-  id: 'ref-1',
-  quality_id: 'quality-1',
-  source_id: 'source-1',
-  source_title: 'Test Source',
-  reliability_code: 'A',
-  credibility_code: 1,
-  created_at: '2026-01-01T00:00:00Z',
 };
 
 beforeEach(() => {
@@ -322,6 +301,32 @@ describe('useEntityQualities', () => {
     expect(result.current.qualities).toEqual([updated]);
   });
 
+  it('passes explicit nulls through so quality values can be cleared', async () => {
+    mockQualitiesApi.getAll.mockResolvedValue([]);
+    mockQualitiesApi.update.mockResolvedValue({ ...mockQuality, value_string: null });
+
+    const { result } = renderHook(() => useEntityQualities('entity-1'));
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      await result.current.updateQuality('quality-1', { valueString: null });
+    });
+
+    expect(mockQualitiesApi.update).toHaveBeenCalledWith('quality-1', {
+      qualityName: undefined,
+      qualityType: undefined,
+      valueString: null,
+      valueInteger: undefined,
+      valueBoolean: undefined,
+      valueDate: undefined,
+      valueCoordinates: undefined,
+      valueAddress: undefined,
+    });
+  });
+
   it('deletes a quality from the list', async () => {
     mockQualitiesApi.getAll.mockResolvedValue([]);
     mockQualitiesApi.delete.mockResolvedValue(undefined);
@@ -338,74 +343,5 @@ describe('useEntityQualities', () => {
 
     expect(mockQualitiesApi.delete).toHaveBeenCalledWith('quality-1');
     expect(result.current.qualities).toEqual([]);
-  });
-});
-
-describe('useQualitySourceRefs', () => {
-  it('loads source refs for a quality', async () => {
-    mockQualitySourceRefsApi.getAll.mockResolvedValue([mockRef]);
-
-    const { result } = renderHook(() => useQualitySourceRefs('quality-1'));
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    expect(result.current.refs).toEqual([mockRef]);
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('returns empty when no qualityId', () => {
-    const { result } = renderHook(() => useQualitySourceRefs(null));
-
-    expect(result.current.refs).toEqual([]);
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('adds a ref and appends it', async () => {
-    const created = { ...mockRef, id: 'ref-new' };
-    mockQualitySourceRefsApi.getAll.mockResolvedValue([mockRef]);
-    mockQualitySourceRefsApi.add.mockResolvedValue(created);
-
-    const { result } = renderHook(() => useQualitySourceRefs('quality-1'));
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    await act(async () => {
-      await result.current.addRef({
-        qualityId: 'quality-1',
-        sourceId: 'source-1',
-        reliabilityCode: 'A',
-        credibilityCode: 1,
-      });
-    });
-
-    expect(mockQualitySourceRefsApi.add).toHaveBeenCalledWith({
-      qualityId: 'quality-1',
-      sourceId: 'source-1',
-      reliabilityCode: 'A',
-      credibilityCode: 1,
-    });
-    expect(result.current.refs).toHaveLength(2);
-  });
-
-  it('removes a ref from the list', async () => {
-    mockQualitySourceRefsApi.getAll.mockResolvedValue([mockRef]);
-    mockQualitySourceRefsApi.remove.mockResolvedValue(undefined);
-
-    const { result } = renderHook(() => useQualitySourceRefs('quality-1'));
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    await act(async () => {
-      await result.current.removeRef('ref-1');
-    });
-
-    expect(mockQualitySourceRefsApi.remove).toHaveBeenCalledWith('ref-1');
-    expect(result.current.refs).toEqual([]);
   });
 });

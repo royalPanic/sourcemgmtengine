@@ -60,7 +60,7 @@ export function useSources(caseId: string | null) {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -86,41 +86,38 @@ export function useSources(caseId: string | null) {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => {
     const updated = await sourcesApi.update(id, params);
-    await reloadQuietly();
+
+    // A rating change propagates to every source that cites this one, so those
+    // rows have to be re-read. A plain edit touches only this row, which is
+    // already patched in place below — refetching the whole list for a title
+    // change is wasted work.
+    const ratingTouched =
+      params.reliabilityCode !== undefined ||
+      params.credibilityCode !== undefined ||
+      params.referenceSourceId !== undefined ||
+      params.referenceEntityId !== undefined;
+
+    if (ratingTouched) {
+      await reloadQuietly();
+    } else {
+      setSources(prev => prev.map(s => (s.id === id ? { ...s, ...updated } : s)));
+    }
+
     return updated;
   };
 
   const deleteSource = async (id: string) => {
     await sourcesApi.delete(id);
     setSources(prev => prev.filter(s => s.id !== id));
-  };
-
-  const addAttachment = async (sourceId: string, file: File) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const data = new Uint8Array(arrayBuffer);
-    const relativePath = await filesApi.saveAttachment(sourceId, file.name, data);
-
-    const attachment = await sourcesApi.addAttachment({
-      sourceId,
-      fileName: file.name,
-      relativePath,
-      mimeType: file.type,
-      fileSize: file.size,
-    });
-
-    setSources(prev => prev.map(s =>
-      s.id === sourceId
-        ? { ...s, attachments: [...s.attachments, attachment] }
-        : s
-    ));
-
-    return attachment;
+    // Deleting a referenced source clears its citation links in SQLite; reload
+    // so citing rows stop showing a reference that no longer exists.
+    await reloadQuietly();
   };
 
   /**
@@ -209,7 +206,6 @@ export function useSources(caseId: string | null) {
     createSource,
     updateSource,
     deleteSource,
-    addAttachment,
     importAttachment,
     deleteAttachment,
     openAttachment,

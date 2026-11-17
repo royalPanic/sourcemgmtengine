@@ -3,6 +3,7 @@ import type {
   Stance,
   ReliabilityCode,
   CredibilityCode,
+  QualitySourceRef,
 } from '../types';
 import { RELIABILITY_CODES, CREDIBILITY_CODES } from '../types';
 
@@ -103,9 +104,45 @@ export function isReferenceLinked(source: SourceWithAttachments): boolean {
   return Boolean(source.reference_source_id);
 }
 
-/** True when a source cites an entity. */
-export function isEntityReferenced(source: SourceWithAttachments): boolean {
-  return Boolean(source.reference_entity_id);
+/**
+ * Averages the Admiralty ratings carried by a quality's source references.
+ *
+ * This is the single implementation of "average a set of Admiralty codes":
+ * the quality editor, the entity detail drawer, and the dashboard all read
+ * from here. Each dimension is averaged independently, so a reference with
+ * only a reliability code still contributes to that dimension.
+ *
+ * Lower is better on both scales (A=1 … F=6, 1=1 … 6=6), so the average is
+ * rounded to the nearest code and clamped into range.
+ */
+export function averageQualityRefs(refs: QualitySourceRef[]): {
+  reliability: ReliabilityCode | null;
+  credibility: CredibilityCode | null;
+} {
+  if (refs.length === 0) {
+    return { reliability: null, credibility: null };
+  }
+
+  const reliabilityScores: number[] = [];
+  const credibilityScores: number[] = [];
+
+  for (const ref of refs) {
+    if (ref.reliability_code) {
+      const score = RELIABILITY_CODES.indexOf(ref.reliability_code) + 1;
+      if (score > 0) reliabilityScores.push(score);
+    }
+    if (ref.credibility_code != null) {
+      credibilityScores.push(ref.credibility_code);
+    }
+  }
+
+  const avgReliability = mean(reliabilityScores);
+  const avgCredibility = mean(credibilityScores);
+
+  return {
+    reliability: avgReliability === null ? null : scoreToReliabilityLabel(avgReliability),
+    credibility: avgCredibility === null ? null : scoreToCredibilityLabel(avgCredibility),
+  };
 }
 
 function mean(values: number[]): number | null {
@@ -119,7 +156,8 @@ export function scoreToReliabilityLabel(score: number): ReliabilityCode {
     RELIABILITY_CODES.length - 1,
     Math.max(0, Math.round(score) - 1)
   );
-  return RELIABILITY_CODES[index];
+  // The index is clamped into range above, so the lookup always resolves.
+  return RELIABILITY_CODES[index]!;
 }
 
 /** Nearest credibility digit for a 1–6 average. */
@@ -128,7 +166,7 @@ export function scoreToCredibilityLabel(score: number): CredibilityCode {
     CREDIBILITY_CODES.length - 1,
     Math.max(0, Math.round(score) - 1)
   );
-  return CREDIBILITY_CODES[index];
+  return CREDIBILITY_CODES[index]!;
 }
 
 function summarizeReliability(

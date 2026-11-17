@@ -6,8 +6,9 @@ vi.stubGlobal('confirm', vi.fn(() => true));
 
 // jsdom does not expose a usable localStorage here (Node's own global shadows
 // it), so install a minimal in-memory implementation for tests that persist
-// view preferences.
-if (typeof window !== 'undefined' && !window.localStorage) {
+// view preferences. Defining it unconditionally also stops Node from emitting
+// its "localStorage is not available" warning on every test file.
+{
   const store = new Map<string, string>();
   const storage: Storage = {
     get length() {

@@ -69,8 +69,8 @@ fn get_text(url: &str) -> Result<String, String> {
 /// The merkle root is kept in internal byte order so it can be compared
 /// directly against an attested message.
 pub fn parse_header(header_hex: &str, height: u64) -> Result<BlockHeader, String> {
-    let bytes = hex::decode(header_hex)
-        .map_err(|e| format!("block header is not valid hex: {e}"))?;
+    let bytes =
+        hex::decode(header_hex).map_err(|e| format!("block header is not valid hex: {e}"))?;
 
     if bytes.len() != 80 {
         return Err(format!(

@@ -28,7 +28,6 @@ const mockCase: Case = {
   id: 'case-1',
   title: 'Test Case',
   description: 'A test case',
-  kind: 'case',
   event_date: null,
   event_time: null,
   created_at: '2026-01-01T00:00:00Z',
@@ -178,6 +177,35 @@ describe('useCaseNote', () => {
     });
 
     expect(result.current.note).toEqual(mockNote);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('ignores a note load that finishes after switching cases', async () => {
+    let resolveFirst!: (note: CaseNote) => void;
+    const firstLoad = new Promise<CaseNote>(resolve => {
+      resolveFirst = resolve;
+    });
+    const secondNote = { ...mockNote, id: 'note-2', case_id: 'case-2', content: 'Second case' };
+    mockCasesApi.getNote.mockImplementation((id: string) =>
+      id === 'case-1' ? firstLoad : Promise.resolve(secondNote)
+    );
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | null }) => useCaseNote(id),
+      { initialProps: { id: 'case-1' } }
+    );
+
+    rerender({ id: 'case-2' });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      resolveFirst(mockNote);
+      await firstLoad;
+    });
+
+    expect(result.current.note).toEqual(secondNote);
     expect(result.current.loading).toBe(false);
   });
 

@@ -4,7 +4,7 @@ import { CaseHeader } from './CaseHeader';
 import { WorkspaceTab } from './WorkspaceTab';
 import { Dashboard } from './Dashboard';
 import { useCaseNote } from '../hooks/useCases';
-import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity, EntityType } from '../types';
+import type { Case, SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity, EntityType, EntityTypeQuality } from '../types';
 
 type Tab = 'notes' | 'workspace' | 'dashboard';
 
@@ -37,24 +37,7 @@ interface MainContentProps {
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
-  onUpdateSource: (id: string, params: Partial<{
-    title: string;
-    sourceType: SourceType;
-    url: string;
-    rawText: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-    stance: Stance;
-    referenceSourceId: string;
-    referenceEntityId: string;
-    sourceDate: string;
-    sourceTime: string;
-    customMetadata: SourceCustomMetadata;
-  }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;
-  onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
-  onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
-  onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenSourceDetail: (source: SourceWithAttachments) => void;
   onCreateEntity: (params: {
     entityType: string;
@@ -65,6 +48,20 @@ interface MainContentProps {
   }) => Promise<void>;
   onDeleteEntity: (id: string) => Promise<void>;
   onOpenEntityDetail: (entity: Entity) => void;
+  /** The entity currently open in the detail drawer, owned by `App`. */
+  selectedEntityId: string | null;
+  onCreateType: (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => Promise<void>;
+  onUpdateType: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => Promise<void>;
+  onDeleteType: (id: string) => Promise<void>;
 }
 
 export function MainContent({
@@ -77,15 +74,15 @@ export function MainContent({
   entityTypes,
   onUpdateContainer,
   onCreateSource,
-  onUpdateSource,
   onDeleteSource,
-  onImportAttachment,
-  onDeleteAttachment,
-  onOpenAttachment,
   onOpenSourceDetail,
   onCreateEntity,
   onDeleteEntity,
   onOpenEntityDetail,
+  selectedEntityId,
+  onCreateType,
+  onUpdateType,
+  onDeleteType,
 }: MainContentProps) {
   const [activeTab, setActiveTab] = useState<Tab>('notes');
   const caseId = container?.id ?? null;
@@ -185,15 +182,15 @@ export function MainContent({
             entitiesLoading={entitiesLoading}
             entityTypes={entityTypes}
             onCreateSource={onCreateSource}
-            onUpdateSource={onUpdateSource}
             onDeleteSource={onDeleteSource}
-            onImportAttachment={onImportAttachment}
-            onDeleteAttachment={onDeleteAttachment}
-            onOpenAttachment={onOpenAttachment}
             onOpenSourceDetail={onOpenSourceDetail}
             onCreateEntity={onCreateEntity}
             onDeleteEntity={onDeleteEntity}
             onOpenEntityDetail={onOpenEntityDetail}
+            selectedEntityId={selectedEntityId}
+            onCreateType={onCreateType}
+            onUpdateType={onUpdateType}
+            onDeleteType={onDeleteType}
           />
         )}
         {activeTab === 'dashboard' && (

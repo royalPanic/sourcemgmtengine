@@ -1,6 +1,6 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, TimestampRecord, ContainerKind, Stance } from '../types';
-import type { Entity, EntityQuality, EntityQualityWithRefs, EntityType, QualitySourceRef, QualityType, ReliabilityCode, CredibilityCode } from '../types';
+import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, TimestampRecord, Stance } from '../types';
+import type { Entity, EntityQuality, EntityQualityWithRefs, EntityType, EntityTypeQuality, QualitySourceRef, QualityType, ReliabilityCode, CredibilityCode } from '../types';
 
 // Tauri v2 maps Rust snake_case command parameters to camelCase on the JS side,
 // so every argument below must be camelCase.
@@ -8,13 +8,11 @@ export const casesApi = {
   create: (params: {
     title: string;
     description?: string;
-    kind?: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => invoke<Case>('create_case', {
     title: params.title,
     description: params.description,
-    kind: params.kind,
     eventDate: params.eventDate,
     eventTime: params.eventTime,
   }),
@@ -142,6 +140,32 @@ export const entitiesApi = {
   getAll: () =>
     invoke<EntityType[]>('get_entity_types'),
 
+  createType: (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities?: EntityTypeQuality[];
+  }) => invoke<EntityType>('create_entity_type', {
+    id: params.id,
+    name: params.name,
+    description: params.description,
+    defaultQualities: params.defaultQualities,
+  }),
+
+  updateType: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => invoke<EntityType>('update_entity_type', {
+    id,
+    name: params.name,
+    description: params.description,
+    defaultQualities: params.defaultQualities,
+  }),
+
+  deleteType: (id: string) =>
+    invoke<void>('delete_entity_type', { id }),
+
   createEntity: (params: {
     entityType: string;
     name: string;
@@ -251,17 +275,11 @@ export const qualitySourceRefsApi = {
 };
 
 export const filesApi = {
-  saveAttachment: (sourceId: string, fileName: string, data: Uint8Array) => 
-    invoke<string>('save_attachment', { sourceId, fileName, data: Array.from(data) }),
-
   /** Copies a file from an absolute on-disk path into the attachment store. */
   importAttachment: (sourceId: string, sourcePath: string) =>
     invoke<ImportedAttachment>('import_attachment', { sourceId, sourcePath }),
-  
-  readAttachment: (relativePath: string) => 
-    invoke<number[]>('read_attachment', { relativePath }).then(arr => new Uint8Array(arr)),
-  
-  deleteAttachmentFile: (relativePath: string) => 
+
+  deleteAttachmentFile: (relativePath: string) =>
     invoke<void>('delete_attachment_file', { relativePath }),
   
   downloadMedia: (sourceId: string, url: string) => 

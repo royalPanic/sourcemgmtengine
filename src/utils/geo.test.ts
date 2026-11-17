@@ -264,7 +264,7 @@ describe('clusterProjected', () => {
   it('merges pins within the threshold', () => {
     const clusters = clusterProjected([at('a', 0, 0), at('b', 5, 5)]);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].points.map(p => p.id)).toEqual(['a', 'b']);
+    expect(clusters[0]!.points.map(p => p.id)).toEqual(['a', 'b']);
   });
 
   it('respects a custom threshold', () => {
@@ -275,13 +275,13 @@ describe('clusterProjected', () => {
 
   it('centres the cluster on its members', () => {
     const clusters = clusterProjected([at('a', 0, 0), at('b', 10, 0)]);
-    expect(clusters[0].x).toBeCloseTo(5, 6);
-    expect(clusters[0].y).toBeCloseTo(0, 6);
+    expect(clusters[0]!.x).toBeCloseTo(5, 6);
+    expect(clusters[0]!.y).toBeCloseTo(0, 6);
   });
 
   it('uses the first point id as the cluster key', () => {
     const clusters = clusterProjected([at('first', 0, 0), at('second', 2, 2)]);
-    expect(clusters[0].key).toBe('first');
+    expect(clusters[0]!.key).toBe('first');
   });
 
   it('does not chain distant pins through a shared neighbour', () => {
@@ -289,8 +289,8 @@ describe('clusterProjected', () => {
     // clustering joins b to a, then c is too far from the a/b centroid.
     const clusters = clusterProjected([at('a', 0, 0), at('b', 14, 0), at('c', 28, 0)]);
     expect(clusters).toHaveLength(2);
-    expect(clusters[0].points.map(p => p.id)).toEqual(['a', 'b']);
-    expect(clusters[1].points.map(p => p.id)).toEqual(['c']);
+    expect(clusters[0]!.points.map(p => p.id)).toEqual(['a', 'b']);
+    expect(clusters[1]!.points.map(p => p.id)).toEqual(['c']);
   });
 
   it('handles an empty input', () => {
@@ -303,15 +303,15 @@ describe('ringToPath', () => {
 
   function parsePath(d: string): Array<[number, number]> {
     const pts: Array<[number, number]> = [];
-    for (const m of d.matchAll(/[ML]([-\d.]+) ([-\d.]+)/g)) pts.push([+m[1], +m[2]]);
+    for (const m of d.matchAll(/[ML]([-\d.]+) ([-\d.]+)/g)) pts.push([+m[1]!, +m[2]!]);
     return pts;
   }
 
   function inside(x: number, y: number, poly: Array<[number, number]>): boolean {
     let hit = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i];
-      const [xj, yj] = poly[j];
+      const [xi, yi] = poly[i]!;
+      const [xj, yj] = poly[j]!;
       if ((yi > y) !== (yj > y)) {
         const xInt = ((xj - xi) * (y - yi)) / (yj - yi) + xi;
         if (x < xInt) hit = !hit;

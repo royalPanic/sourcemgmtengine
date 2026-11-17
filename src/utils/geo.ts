@@ -121,7 +121,9 @@ export function collectGeoPoints(sources: SourceWithAttachments[]): GeoPoint[] {
  */
 function minimalLonArc(longitudes: number[]): { start: number; span: number } {
   if (longitudes.length === 0) return { start: -180, span: 360 };
-  if (longitudes.length === 1) return { start: longitudes[0], span: 0 };
+  const first = longitudes[0];
+  if (first === undefined) return { start: -180, span: 360 };
+  if (longitudes.length === 1) return { start: first, span: 0 };
 
   const sorted = [...longitudes].sort((a, b) => a - b);
 
@@ -130,7 +132,12 @@ function minimalLonArc(longitudes: number[]): { start: number; span: number } {
 
   for (let i = 0; i < sorted.length; i += 1) {
     const current = sorted[i];
-    const next = i === sorted.length - 1 ? sorted[0] + 360 : sorted[i + 1];
+    if (current === undefined) continue;
+    const following = sorted[i + 1];
+    const wrap = sorted[0];
+    if (wrap === undefined) continue;
+    const next = i === sorted.length - 1 ? wrap + 360 : following;
+    if (next === undefined) continue;
     const gap = next - current;
     if (gap > largestGap) {
       largestGap = gap;
@@ -140,6 +147,7 @@ function minimalLonArc(longitudes: number[]): { start: number; span: number } {
 
   // The arc starts just after the largest gap.
   const start = sorted[(gapIndex + 1) % sorted.length];
+  if (start === undefined) return { start: first, span: 0 };
   const span = 360 - largestGap;
 
   return { start, span };
@@ -262,13 +270,17 @@ export function ringToPath(
   // dragged a full turn around and its span exceeds 360 degrees.
   const lons: number[] = [];
   const lats: number[] = [];
-  let previous = ring[0];
-  let previousAtPole = Math.abs(ring[1]) >= POLE_LATITUDE;
+  const firstLon = ring[0];
+  const firstLat = ring[1];
+  if (firstLon === undefined || firstLat === undefined) return '';
+  let previous = firstLon;
+  let previousAtPole = Math.abs(firstLat) >= POLE_LATITUDE;
 
   for (let i = 0; i < ring.length; i += 2) {
     const lat = ring[i + 1];
-    const atPole = Math.abs(lat) >= POLE_LATITUDE;
     let lon = ring[i];
+    if (lat === undefined || lon === undefined) continue;
+    const atPole = Math.abs(lat) >= POLE_LATITUDE;
 
     if (i > 0 && !atPole && !previousAtPole) {
       while (lon - previous > 180) lon -= 360;
@@ -293,8 +305,11 @@ export function ringToPath(
 
   const commands: string[] = [];
   for (let i = 0; i < count; i += 1) {
-    const x = ((lons[i] + shift - bounds.minLon) / lonSpan) * viewport.width;
-    const y = ((bounds.maxLat - lats[i]) / latSpan) * viewport.height;
+    const lon = lons[i];
+    const lat = lats[i];
+    if (lon === undefined || lat === undefined) continue;
+    const x = ((lon + shift - bounds.minLon) / lonSpan) * viewport.width;
+    const y = ((bounds.maxLat - lat) / latSpan) * viewport.height;
     commands.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
   }
   commands.push('Z');

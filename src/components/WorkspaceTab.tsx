@@ -7,6 +7,7 @@ import type {
   Stance,
   Entity,
   EntityType,
+  EntityTypeQuality,
 } from '../types';
 import { SourcesGrid } from './SourcesGrid';
 import { EntitiesPanel } from './EntitiesPanel';
@@ -35,24 +36,7 @@ interface WorkspaceTabProps {
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
-  onUpdateSource: (id: string, params: Partial<{
-    title: string;
-    sourceType: SourceType;
-    url: string;
-    rawText: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-    stance: Stance;
-    referenceSourceId: string;
-    referenceEntityId: string;
-    sourceDate: string;
-    sourceTime: string;
-    customMetadata: SourceCustomMetadata;
-  }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;
-  onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
-  onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
-  onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenSourceDetail: (source: SourceWithAttachments) => void;
   onCreateEntity: (params: {
     entityType: string;
@@ -63,6 +47,20 @@ interface WorkspaceTabProps {
   }) => Promise<void>;
   onDeleteEntity: (id: string) => Promise<void>;
   onOpenEntityDetail: (entity: Entity) => void;
+  /** The entity currently open in the detail drawer, owned by `App`. */
+  selectedEntityId: string | null;
+  onCreateType: (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => Promise<void>;
+  onUpdateType: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => Promise<void>;
+  onDeleteType: (id: string) => Promise<void>;
 }
 
 const TAB_LABELS: Record<WorkspaceTab, string> = {
@@ -79,15 +77,15 @@ export function WorkspaceTab({
   entitiesLoading,
   entityTypes,
   onCreateSource,
-  onUpdateSource,
   onDeleteSource,
-  onImportAttachment,
-  onDeleteAttachment,
-  onOpenAttachment,
   onOpenSourceDetail,
   onCreateEntity,
   onDeleteEntity,
   onOpenEntityDetail,
+  selectedEntityId,
+  onCreateType,
+  onUpdateType,
+  onDeleteType,
 }: WorkspaceTabProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('sources');
 
@@ -121,11 +119,7 @@ export function WorkspaceTab({
             loading={sourcesLoading}
             entities={entities}
             onCreateSource={onCreateSource}
-            onUpdateSource={onUpdateSource}
             onDeleteSource={onDeleteSource}
-            onImportAttachment={onImportAttachment}
-            onDeleteAttachment={onDeleteAttachment}
-            onOpenAttachment={onOpenAttachment}
             onOpenDetail={onOpenSourceDetail}
           />
         )}
@@ -139,6 +133,10 @@ export function WorkspaceTab({
             onCreateEntity={onCreateEntity}
             onDeleteEntity={onDeleteEntity}
             onOpenEntityDetail={onOpenEntityDetail}
+            selectedEntityId={selectedEntityId}
+            onCreateType={onCreateType}
+            onUpdateType={onUpdateType}
+            onDeleteType={onDeleteType}
           />
         )}
       </div>

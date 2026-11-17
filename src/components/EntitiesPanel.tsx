@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Case, Entity, EntityType } from '../types';
+import type { Case, Entity, EntityType, EntityTypeQuality } from '../types';
 import { EntityTypeSelector } from './EntityTypeSelector';
 import { EntityTypeDesigner } from './EntityTypeDesigner';
 
@@ -20,6 +20,20 @@ interface EntitiesPanelProps {
   }) => Promise<void>;
   onDeleteEntity: (id: string) => Promise<void>;
   onOpenEntityDetail: (entity: Entity) => void;
+  /** The entity currently open in the detail drawer, owned by `App`. */
+  selectedEntityId: string | null;
+  onCreateType: (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => Promise<void>;
+  onUpdateType: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => Promise<void>;
+  onDeleteType: (id: string) => Promise<void>;
 }
 
 export function EntitiesPanel({
@@ -31,8 +45,11 @@ export function EntitiesPanel({
   onCreateEntity,
   onDeleteEntity,
   onOpenEntityDetail,
+  selectedEntityId,
+  onCreateType,
+  onUpdateType,
+  onDeleteType,
 }: EntitiesPanelProps) {
-  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [showNewEntity, setShowNewEntity] = useState(false);
   const [manageTypes, setManageTypes] = useState(false);
   const [entityType, setEntityType] = useState<string | null>(null);
@@ -44,9 +61,23 @@ export function EntitiesPanel({
   const [targetCaseId, setTargetCaseId] = useState<string | null>(selectedCaseId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const globalEntities = entities.filter(e => e.is_global);
-  const caseEntities = entities.filter(e => !e.is_global);
+  // Search matches the name, the type, and the description, so an operator can
+  // find an entity by any of the labels they remember it by.
+  const matchesSearch = (entity: Entity): boolean => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return true;
+    return (
+      entity.name.toLowerCase().includes(needle) ||
+      entity.entity_type.toLowerCase().includes(needle) ||
+      (entity.description?.toLowerCase().includes(needle) ?? false)
+    );
+  };
+
+  const globalEntities = entities.filter(e => e.is_global && matchesSearch(e));
+  const caseEntities = entities.filter(e => !e.is_global && matchesSearch(e));
+  const visibleCount = globalEntities.length + caseEntities.length;
 
   const handleCreateEntity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,9 +113,6 @@ export function EntitiesPanel({
   const handleDeleteEntity = async (id: string) => {
     if (window.confirm(`Delete entity "${entities.find(e => e.id === id)?.name ?? id}"? This will also delete all its qualities.`)) {
       await onDeleteEntity(id);
-      if (selectedEntity?.id === id) {
-        setSelectedEntity(null);
-      }
     }
   };
 
@@ -106,7 +134,9 @@ export function EntitiesPanel({
         </div>
         <EntityTypeDesigner
           types={entityTypes}
-          onClose={() => setManageTypes(false)}
+          onCreate={onCreateType}
+          onUpdate={onUpdateType}
+          onDelete={onDeleteType}
         />
       </div>
     );
@@ -151,7 +181,15 @@ export function EntitiesPanel({
           type="text"
           className="input"
           placeholder="Search entities…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Search entities"
         />
+        {searchQuery.trim() && (
+          <p className="mt-1.5 text-[11px] text-zinc-500">
+            {visibleCount} of {entities.length} shown
+          </p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -170,6 +208,17 @@ export function EntitiesPanel({
             <p className="text-sm">No entities yet</p>
             <p className="text-xs mt-1">Create an entity to start tracking people, organizations, vehicles, and more</p>
           </div>
+        ) : visibleCount === 0 ? (
+          <div className="text-center py-16 text-zinc-500">
+            <p className="text-sm">No entities match “{searchQuery.trim()}”</p>
+            <button
+              type="button"
+              className="btn-secondary mt-3 text-xs"
+              onClick={() => setSearchQuery('')}
+            >
+              Clear search
+            </button>
+          </div>
         ) : (
           <div className="space-y-1">
             {globalEntities.length > 0 && (
@@ -182,9 +231,8 @@ export function EntitiesPanel({
                     <li key={entity.id}>
                       <EntityListItem
                         entity={entity}
-                        isSelected={selectedEntity?.id === entity.id}
+                        isSelected={selectedEntityId === entity.id}
                         onSelect={() => {
-                          setSelectedEntity(entity);
                           onOpenEntityDetail(entity);
                         }}
                         onDelete={() => handleDeleteEntity(entity.id)}
@@ -205,9 +253,8 @@ export function EntitiesPanel({
                     <li key={entity.id}>
                       <EntityListItem
                         entity={entity}
-                        isSelected={selectedEntity?.id === entity.id}
+                        isSelected={selectedEntityId === entity.id}
                         onSelect={() => {
-                          setSelectedEntity(entity);
                           onOpenEntityDetail(entity);
                         }}
                         onDelete={() => handleDeleteEntity(entity.id)}

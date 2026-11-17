@@ -41,7 +41,6 @@ const mockCases: Case[] = [
     id: 'case-1',
     title: 'Test Case',
     description: null,
-    kind: 'case',
     event_date: null,
     event_time: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -51,7 +50,6 @@ const mockCases: Case[] = [
     id: 'case-2',
     title: 'Other Case',
     description: null,
-    kind: 'case',
     event_date: null,
     event_time: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -195,7 +193,7 @@ describe('EntityDetailDrawer', () => {
     />);
     // Click the Delete button in the footer (the one with text "Delete")
     const deleteButtons = screen.getAllByRole('button', { name: /Delete/ });
-    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]!);
     expect(onDeleteEntity).toHaveBeenCalledWith('entity-1');
   });
 
@@ -343,7 +341,7 @@ describe('EntityDetailDrawer', () => {
     expect(onDeleteQuality).not.toHaveBeenCalled();
   });
 
-  it('shows an em dash for a quality with no value', () => {    const emptyQuality = { ...mockQualities[0], value_string: null };
+  it('shows an em dash for a quality with no value', () => {    const emptyQuality = { ...mockQualities[0]!, value_string: null };
     render(<EntityDetailDrawer
       isOpen={true}
       onClose={vi.fn()}

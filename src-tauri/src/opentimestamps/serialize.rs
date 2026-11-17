@@ -142,7 +142,18 @@ mod tests {
 
     #[test]
     fn varuint_round_trips_across_widths() {
-        for value in [0u64, 1, 127, 128, 255, 300, 16383, 16384, 1 << 40, u64::MAX >> 1] {
+        for value in [
+            0u64,
+            1,
+            127,
+            128,
+            255,
+            300,
+            16383,
+            16384,
+            1 << 40,
+            u64::MAX >> 1,
+        ] {
             let mut writer = Writer::new();
             writer.write_varuint(value);
             let bytes = writer.into_bytes();

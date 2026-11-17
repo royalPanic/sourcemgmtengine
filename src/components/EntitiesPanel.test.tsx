@@ -27,8 +27,8 @@ const mockEntities: Entity[] = [
 ];
 
 const mockTypes: EntityType[] = [
-  { id: 'type-1', name: 'Person', description: null, default_qualities: [] },
-  { id: 'type-2', name: 'Organization', description: null, default_qualities: [] },
+  { id: 'type-1', name: 'Person', description: null, default_qualities: [], is_builtin: false },
+  { id: 'type-2', name: 'Organization', description: null, default_qualities: [], is_builtin: false },
 ];
 
 const mockCases: Case[] = [
@@ -36,7 +36,6 @@ const mockCases: Case[] = [
     id: 'case-1',
     title: 'Test Case',
     description: null,
-    kind: 'case',
     event_date: null,
     event_time: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -46,7 +45,6 @@ const mockCases: Case[] = [
     id: 'case-2',
     title: 'Other Case',
     description: null,
-    kind: 'case',
     event_date: null,
     event_time: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -73,7 +71,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     expect(screen.getByText(/Entities \(2\)/)).toBeInTheDocument();
     expect(screen.getByText('John Doe')).toBeInTheDocument();
@@ -89,9 +90,91 @@ describe('EntitiesPanel', () => {
       loading={true}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     expect(container.querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('filters entities by the search box', () => {
+    render(<EntitiesPanel
+      selectedCaseId="case-1"
+      cases={[]}
+      entities={mockEntities}
+      entityTypes={mockTypes}
+      loading={false}
+      onCreateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onOpenEntityDetail={vi.fn()}
+      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.change(screen.getByLabelText('Search entities'), {
+      target: { value: 'reuters' },
+    });
+
+    expect(screen.getByText('Reuters')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+  });
+
+  it('matches the search against the entity type and description', () => {
+    render(<EntitiesPanel
+      selectedCaseId="case-1"
+      cases={[]}
+      entities={mockEntities}
+      entityTypes={mockTypes}
+      loading={false}
+      onCreateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onOpenEntityDetail={vi.fn()}
+      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    const search = screen.getByLabelText('Search entities');
+
+    fireEvent.change(search, { target: { value: 'organization' } });
+    expect(screen.getByText('Reuters')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: 'news agency' } });
+    expect(screen.getByText('Reuters')).toBeInTheDocument();
+    expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
+  });
+
+  it('offers a way out when nothing matches', () => {
+    render(<EntitiesPanel
+      selectedCaseId="case-1"
+      cases={[]}
+      entities={mockEntities}
+      entityTypes={mockTypes}
+      loading={false}
+      onCreateEntity={vi.fn().mockResolvedValue(undefined)}
+      onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
+      onOpenEntityDetail={vi.fn()}
+      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.change(screen.getByLabelText('Search entities'), {
+      target: { value: 'nothing here' },
+    });
+
+    expect(screen.getByText(/No entities match/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear search/i }));
+
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.getByText('Reuters')).toBeInTheDocument();
   });
 
   it('shows empty state when no entities', () => {
@@ -103,7 +186,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     expect(screen.getByText(/No entities yet/)).toBeInTheDocument();
   });
@@ -117,7 +203,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     expect(screen.getByText(/Global \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Case-Specific \(1\)/)).toBeInTheDocument();
@@ -132,10 +221,13 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     const newEntityButtons = screen.getAllByText(/New Entity/);
-    fireEvent.click(newEntityButtons[newEntityButtons.length - 1]);
+    fireEvent.click(newEntityButtons[newEntityButtons.length - 1]!);
     expect(screen.getAllByText(/New Entity/).length).toBeGreaterThan(1);
   });
 
@@ -148,7 +240,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByRole('button', { name: /Types/ }));
     const headings = screen.getAllByRole('heading', { name: /Manage Entity Types/ });
@@ -166,9 +261,13 @@ describe('EntitiesPanel', () => {
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
       onOpenEntityDetail={onOpenEntityDetail}
+      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByText('John Doe'));
-    expect(onOpenEntityDetail).toHaveBeenCalledWith(mockEntities[0]);
+    expect(onOpenEntityDetail).toHaveBeenCalledWith(mockEntities[0]!);
   });
 
   it('calls onDeleteEntity when deleting an entity', async () => {
@@ -181,7 +280,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={onDeleteEntity}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     const entityItem = screen.getByText('John Doe').closest('div')!;
     fireEvent.mouseEnter(entityItem);
@@ -199,10 +301,13 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={onCreateEntity}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
-    const typeSelect = screen.getAllByRole('combobox')[0];
+    const typeSelect = screen.getAllByRole('combobox')[0]!;
     fireEvent.change(typeSelect, { target: { value: 'type-1' } });
     const nameInput = screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/);
     fireEvent.change(nameInput, { target: { value: 'Test Entity' } });
@@ -227,10 +332,13 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={onCreateEntity}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
-    const typeSelect = screen.getAllByRole('combobox')[0];
+    const typeSelect = screen.getAllByRole('combobox')[0]!;
     fireEvent.change(typeSelect, { target: { value: 'type-1' } });
     const nameInput = screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/);
     fireEvent.change(nameInput, { target: { value: 'Test Entity' } });
@@ -249,7 +357,10 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={onCreateEntity}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
 
@@ -260,7 +371,7 @@ describe('EntitiesPanel', () => {
     const caseSelect = screen.getByDisplayValue('Test Case');
     fireEvent.change(caseSelect, { target: { value: 'case-2' } });
 
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'type-1' } });
+    fireEvent.change(screen.getAllByRole('combobox')[0]!!, { target: { value: 'type-1' } });
     fireEvent.change(
       screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/),
       { target: { value: 'Filed Entity' } }
@@ -284,11 +395,14 @@ describe('EntitiesPanel', () => {
       loading={false}
       onCreateEntity={vi.fn().mockResolvedValue(undefined)}
       onDeleteEntity={vi.fn().mockResolvedValue(undefined)}
-      onOpenEntityDetail={vi.fn()}
+      onOpenEntityDetail={vi.fn()}      selectedEntityId={null}
+      onCreateType={vi.fn().mockResolvedValue(undefined)}
+      onUpdateType={vi.fn().mockResolvedValue(undefined)}
+      onDeleteType={vi.fn().mockResolvedValue(undefined)}
     />);
     fireEvent.click(screen.getByText(/New Entity/));
     fireEvent.change(screen.getByDisplayValue(/Global/), { target: { value: 'case' } });
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'type-1' } });
+    fireEvent.change(screen.getAllByRole('combobox')[0]!!, { target: { value: 'type-1' } });
     fireEvent.change(
       screen.getByPlaceholderText(/e\.g\. John Smith, Reuters, Toyota Camry/),
       { target: { value: 'Orphan' } }

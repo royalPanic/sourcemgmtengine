@@ -322,5 +322,161 @@ pub fn get_migrations() -> Vec<Migration> {
             "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add_timestamp_verification_columns",
+            sql: r#"
+                -- Verification results were previously discarded after each
+                -- check, so the UI could only ever show the stored status.
+                -- Persisting them lets a proof that was verified on another
+                -- machine (or by an earlier run) report what it proved.
+                ALTER TABLE source_timestamp ADD COLUMN block_height INTEGER;
+                ALTER TABLE source_timestamp ADD COLUMN block_time TEXT;
+                ALTER TABLE source_timestamp ADD COLUMN verification_notes TEXT NOT NULL DEFAULT '[]';
+            "#,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "drop_meta_sources_and_reference_meta_source_id",
+            sql: r#"
+                -- Meta sources were superseded by entities in v7. The table and
+                -- the sources.reference_meta_source_id column have been dead
+                -- ever since: nothing reads them, and the v7 triggers were
+                -- rewritten to guard reference_entity_id instead.
+                --
+                -- SQLite cannot drop a column before 3.35 and the bundled
+                -- version varies, so `sources` is rebuilt the same way v8
+                -- rebuilt `entity_qualities`. The rebuild also gives the
+                -- reference-exclusivity triggers a stable column set to guard.
+                -- Dropping `sources` cascades to its dependent rows, so save
+                -- them in temporary tables and restore them after the rebuild.
+                CREATE TEMP TABLE source_attachments_v10_backup AS
+                    SELECT * FROM source_attachments;
+                CREATE TEMP TABLE source_timestamp_v10_backup AS
+                    SELECT * FROM source_timestamp;
+                CREATE TEMP TABLE quality_source_refs_v10_backup AS
+                    SELECT * FROM quality_source_refs;
+                CREATE TEMP TABLE source_references_v10_backup AS
+                    SELECT id, reference_source_id FROM sources
+                    WHERE reference_source_id IS NOT NULL;
+
+                CREATE TABLE sources_new (
+                    id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    source_type TEXT DEFAULT 'URL',
+                    url TEXT,
+                    raw_text TEXT,
+                    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
+                    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+                    custom_metadata TEXT DEFAULT '{}',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    stance TEXT CHECK (stance IN ('supports','refutes','neutral')),
+                    source_date TEXT,
+                    source_time TEXT,
+                    reference_source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+                    reference_entity_id TEXT REFERENCES entities(id) ON DELETE SET NULL,
+                    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+                );
+
+                INSERT INTO sources_new (
+                    id, case_id, title, source_type, url, raw_text, reliability_code,
+                    credibility_code, custom_metadata, created_at, updated_at, stance,
+                    source_date, source_time, reference_source_id, reference_entity_id
+                )
+                SELECT
+                    id, case_id, title, source_type, url, raw_text, reliability_code,
+                    credibility_code, custom_metadata, created_at, updated_at, stance,
+                    source_date, source_time, reference_source_id, reference_entity_id
+                FROM sources;
+
+                DROP TABLE sources;
+                ALTER TABLE sources_new RENAME TO sources;
+
+                CREATE INDEX IF NOT EXISTS idx_sources_case_id ON sources(case_id);
+                CREATE INDEX IF NOT EXISTS idx_sources_source_date ON sources(source_date);
+                CREATE INDEX IF NOT EXISTS idx_sources_reference_source_id
+                    ON sources(reference_source_id);
+                CREATE INDEX IF NOT EXISTS idx_sources_reference_entity_id
+                    ON sources(reference_entity_id);
+
+                -- Recreate the exclusivity triggers against the rebuilt table.
+                DROP TRIGGER IF EXISTS sources_reference_exclusive_insert;
+                DROP TRIGGER IF EXISTS sources_reference_exclusive_update;
+
+                CREATE TRIGGER sources_reference_exclusive_insert
+                BEFORE INSERT ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_entity_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or an entity, not both');
+                END;
+
+                CREATE TRIGGER sources_reference_exclusive_update
+                BEFORE UPDATE ON sources
+                WHEN NEW.reference_source_id IS NOT NULL
+                 AND NEW.reference_entity_id IS NOT NULL
+                BEGIN
+                    SELECT RAISE(ABORT, 'A source may reference a source or an entity, not both');
+                END;
+
+                -- While the old table is dropped, the new table's source
+                -- references still point at it and are set to NULL. Restore
+                -- those links now that the rebuilt table is in place.
+                UPDATE sources
+                SET reference_source_id = (
+                    SELECT reference_source_id FROM source_references_v10_backup
+                    WHERE source_references_v10_backup.id = sources.id
+                )
+                WHERE id IN (SELECT id FROM source_references_v10_backup);
+
+                INSERT INTO source_attachments
+                    SELECT * FROM source_attachments_v10_backup;
+                INSERT INTO source_timestamp
+                    SELECT * FROM source_timestamp_v10_backup;
+                INSERT INTO quality_source_refs
+                    SELECT * FROM quality_source_refs_v10_backup;
+
+                DROP TABLE source_attachments_v10_backup;
+                DROP TABLE source_timestamp_v10_backup;
+                DROP TABLE quality_source_refs_v10_backup;
+                DROP TABLE source_references_v10_backup;
+
+                DROP TABLE IF EXISTS meta_sources;
+            "#,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "add_entity_types",
+            sql: r#"
+                -- Entity type templates used to be read from JSON files embedded
+                -- in the binary at compile time, so the type designer could
+                -- edit one in memory but nothing was ever written back. This
+                -- table makes a template a first-class record.
+                --
+                -- `default_qualities` is a JSON array of
+                -- {name, type, required} objects. It stays JSON rather than a
+                -- child table because a template is always read and written
+                -- whole, and the shape is fixed by the designer.
+                CREATE TABLE IF NOT EXISTS entity_types (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    default_qualities TEXT NOT NULL DEFAULT '[]',
+                    -- A built-in type ships with the app. It can be edited but
+                    -- not deleted, so a workspace always has the core types.
+                    is_builtin INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_entity_types_name
+                    ON entity_types(name COLLATE NOCASE);
+            "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

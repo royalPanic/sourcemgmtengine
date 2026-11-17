@@ -104,6 +104,26 @@ describe('EntityQualityEditor', () => {
     });
   });
 
+  it('allows a reliability quality to remain not rated', () => {
+    const reliabilityQuality = {
+      ...mockQuality,
+      quality_name: 'Reliability',
+      quality_type: 'reliability' as const,
+      value_string: null,
+    };
+    const { container } = render(<EntityQualityEditor
+      quality={reliabilityQuality}
+      sources={mockSources}
+      onSave={vi.fn().mockResolvedValue(undefined)}
+      onAddSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onRemoveSourceRef={vi.fn().mockResolvedValue(undefined)}
+      onClose={vi.fn()}
+    />);
+
+    const selects = container.querySelectorAll('select');
+    expect(selects[1]).not.toBeRequired();
+  });
+
   it('calls onSave with boolean value', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const boolQuality = { ...mockQuality, quality_type: 'boolean' as const, value_boolean: true };
@@ -221,7 +241,7 @@ describe('EntityQualityEditor', () => {
     const select = document.getElementById('source-select') as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'source-1' } });
     const addButtons = screen.getAllByRole('button', { name: /Add/ });
-    fireEvent.click(addButtons[addButtons.length - 1]);
+    fireEvent.click(addButtons[addButtons.length - 1]!);
     expect(onAddSourceRef).toHaveBeenCalledWith({ sourceId: 'source-1' });
     // The picker resets so the next add starts from scratch.
     expect(select.value).toBe('');
@@ -250,7 +270,7 @@ describe('EntityQualityEditor', () => {
       onClose={vi.fn()}
     />);
     expect(screen.getByText(/Save this quality first/)).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /^Add$/ })[0]).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: /^Add$/ })[0]!).toBeDisabled();
     expect(document.getElementById('source-select')).toBeDisabled();
   });
 

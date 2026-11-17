@@ -31,6 +31,9 @@ mod migration_tests;
 mod entity_scope_tests;
 
 #[cfg(test)]
+mod entity_type_tests;
+
+#[cfg(test)]
 mod download_tests;
 
 use commands::{cases, entities, files, sources};
@@ -59,6 +62,9 @@ pub fn run() {
             sources::add_source_attachment,
             sources::delete_source_attachment,
             entities::get_entity_types,
+            entities::create_entity_type,
+            entities::update_entity_type,
+            entities::delete_entity_type,
             entities::create_entity,
             entities::get_entities,
             entities::get_entity,
@@ -71,13 +77,11 @@ pub fn run() {
             entities::add_quality_source_ref,
             entities::remove_quality_source_ref,
             entities::get_quality_source_refs,
-            files::save_attachment,
             files::import_attachment,
             files::download_media,
             files::timestamp_attachment,
             files::verify_timestamp,
             files::get_timestamp_status,
-            files::read_attachment,
             files::delete_attachment_file,
             files::open_attachment,
             files::get_attachment_path,
@@ -85,4 +89,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

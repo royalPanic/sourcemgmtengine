@@ -1,6 +1,6 @@
 {
   "name": "osint-case-manager",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "OSINT Case & Source Manager - Local-first intelligence case management",
   "type": "module",
   "scripts": {
@@ -10,7 +10,6 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "node scripts/fetch-yt-dlp.mjs && tauri build",
-    "fetch:yt-dlp": "node scripts/fetch-yt-dlp.mjs",
     "fetch:yt-dlp": "node scripts/fetch-yt-dlp.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

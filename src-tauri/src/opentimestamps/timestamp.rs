@@ -65,12 +65,12 @@ impl Timestamp {
     }
 
     pub fn attestations(&self) -> &[Attestation] {
-            &self.attestations
-        }
+        &self.attestations
+    }
 
-        pub fn ops_mut(&mut self) -> &mut BTreeMap<Op, Timestamp> {
-            &mut self.ops
-        }
+    pub fn ops_mut(&mut self) -> &mut BTreeMap<Op, Timestamp> {
+        &mut self.ops
+    }
 
     /// Adds an attestation, ignoring duplicates.
     pub fn add_attestation(&mut self, attestation: Attestation) {
@@ -248,8 +248,7 @@ impl Timestamp {
         }
 
         let result = op.apply(&self.msg)?;
-        let child =
-            Timestamp::deserialize_with_limit(reader, result, recursion_limit - 1)?;
+        let child = Timestamp::deserialize_with_limit(reader, result, recursion_limit - 1)?;
         self.ops.insert(op, child);
         Ok(())
     }
@@ -286,10 +285,10 @@ impl DetachedTimestampFile {
     }
 
     /// The hash operation the digest was produced with.
-        #[cfg(test)]
-        pub fn file_hash_op(&self) -> &Op {
-            &self.file_hash_op
-        }
+    #[cfg(test)]
+    pub fn file_hash_op(&self) -> &Op {
+        &self.file_hash_op
+    }
 
     pub fn file_digest(&self) -> &[u8] {
         self.timestamp.msg()
@@ -327,9 +326,7 @@ impl DetachedTimestampFile {
 
         let major = reader.read_u8()?;
         if major != MAJOR_VERSION {
-            return Err(format!(
-                "unsupported OpenTimestamps major version {major}"
-            ));
+            return Err(format!("unsupported OpenTimestamps major version {major}"));
         }
 
         let file_hash_op = Op::deserialize(&mut reader)?;
@@ -436,10 +433,7 @@ mod tests {
         let original = detached.serialize().unwrap();
 
         let other = DetachedTimestampFile::deserialize(&bytes).unwrap();
-        detached
-            .timestamp_mut()
-            .merge(other.timestamp())
-            .unwrap();
+        detached.timestamp_mut().merge(other.timestamp()).unwrap();
 
         assert_eq!(detached.serialize().unwrap(), original);
     }

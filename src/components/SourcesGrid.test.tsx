@@ -69,11 +69,7 @@ describe('SourcesGrid', () => {
       loading={true}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     // Loading spinner is an SVG element
@@ -86,11 +82,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     expect(screen.getByText(/No sources yet/)).toBeInTheDocument();
@@ -104,11 +96,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={onOpenDetail}
     />);
     expect(screen.getAllByText('Test Source')).toHaveLength(2);
@@ -122,11 +110,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={onOpenDetail}
     />);
     // Click on the row containing the source title
@@ -143,11 +127,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     expect(screen.getByText(/Supports/)).toBeInTheDocument();
@@ -160,11 +140,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     expect(screen.getByText(/Supports/)).toBeInTheDocument();
@@ -180,16 +156,12 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={onDeleteSource}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     
     fireEvent.click(screen.getByTitle('Delete source'));
-    expect(onDeleteSource).toHaveBeenCalledWith(sources[0].id);
+    expect(onDeleteSource).toHaveBeenCalledWith(sources[0]!.id);
   });
 
   it('opens new source modal when clicking Add Source', () => {
@@ -198,11 +170,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     fireEvent.click(screen.getByRole('button', { name: /Add Source/ }));
@@ -217,11 +185,7 @@ describe('SourcesGrid', () => {
       loading={false}
       entities={[]}
       onCreateSource={vi.fn().mockResolvedValue(undefined)}
-      onUpdateSource={vi.fn().mockResolvedValue(undefined)}
       onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-      onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-      onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-      onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
       onOpenDetail={vi.fn()}
     />);
     // The attachments column shows the count in a table cell
@@ -244,11 +208,7 @@ describe('SourcesGrid', () => {
         loading={false}
         entities={[]}
         onCreateSource={vi.fn().mockResolvedValue(undefined)}
-        onUpdateSource={vi.fn().mockResolvedValue(undefined)}
         onDeleteSource={vi.fn().mockResolvedValue(undefined)}
-        onImportAttachment={vi.fn().mockResolvedValue(undefined)}
-        onDeleteAttachment={vi.fn().mockResolvedValue(undefined)}
-        onOpenAttachment={vi.fn().mockResolvedValue(undefined)}
         onOpenDetail={vi.fn()}
       />);
     }

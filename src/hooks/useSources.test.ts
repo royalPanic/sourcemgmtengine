@@ -15,7 +15,7 @@ vi.mock('../api/tauri', () => ({
     deleteAttachment: vi.fn(),
   },
   filesApi: {
-    saveAttachment: vi.fn(),
+
     deleteAttachmentFile: vi.fn(),
     importAttachment: vi.fn(),
     downloadMedia: vi.fn(),
@@ -40,7 +40,7 @@ const mockSourcesApi = sourcesApi as unknown as {
 };
 
 const mockFilesApi = filesApi as unknown as {
-  saveAttachment: ReturnType<typeof vi.fn>;
+
   deleteAttachmentFile: ReturnType<typeof vi.fn>;
   importAttachment: ReturnType<typeof vi.fn>;
   downloadMedia: ReturnType<typeof vi.fn>;
@@ -191,7 +191,9 @@ describe('useSources', () => {
   });
 
   it('deletes a source from the list', async () => {
-    mockSourcesApi.getAll.mockResolvedValue([mockSource]);
+    mockSourcesApi.getAll
+      .mockResolvedValueOnce([mockSource])
+      .mockResolvedValue([]);
     mockSourcesApi.delete.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useSources('case-1'));
@@ -206,44 +208,7 @@ describe('useSources', () => {
 
     expect(mockSourcesApi.delete).toHaveBeenCalledWith('source-1');
     expect(result.current.sources).toEqual([]);
-  });
-
-  it('adds an attachment to a source', async () => {
-    const attachment = {
-      id: 'att-1',
-      source_id: 'source-1',
-      file_name: 'test.jpg',
-      relative_path: 'attachments/source-1/test.jpg',
-      mime_type: 'image/jpeg',
-      file_size: 1024,
-      created_at: '2026-01-01T00:00:00Z',
-    };
-    const file = new File(['test'], 'test.jpg', { type: 'image/jpeg' });
-
-    mockSourcesApi.getAll.mockResolvedValue([mockSource]);
-    mockFilesApi.saveAttachment.mockResolvedValue('attachments/source-1/test.jpg');
-    mockSourcesApi.addAttachment.mockResolvedValue(attachment);
-
-    const { result } = renderHook(() => useSources('case-1'));
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    await act(async () => {
-      await result.current.addAttachment('source-1', file);
-    });
-
-    expect(mockFilesApi.saveAttachment).toHaveBeenCalledWith('source-1', 'test.jpg', expect.any(Uint8Array));
-    expect(mockSourcesApi.addAttachment).toHaveBeenCalledWith({
-      sourceId: 'source-1',
-      fileName: 'test.jpg',
-      relativePath: 'attachments/source-1/test.jpg',
-      mimeType: 'image/jpeg',
-      fileSize: file.size,
-    });
-    // addAttachment updates state directly
-    expect(result.current.sources[0].attachments).toHaveLength(1);
+    expect(mockSourcesApi.getAll).toHaveBeenCalledTimes(2);
   });
 
   it('deletes an attachment from a source', async () => {
@@ -265,7 +230,7 @@ describe('useSources', () => {
 
     expect(mockSourcesApi.deleteAttachment).toHaveBeenCalledWith('att-1');
     expect(mockFilesApi.deleteAttachmentFile).toHaveBeenCalledWith('path/test.jpg');
-    expect(result.current.sources[0].attachments).toHaveLength(0);
+    expect(result.current.sources[0]!.attachments).toHaveLength(0);
   });
 
   it('downloads media from a URL', async () => {
@@ -292,7 +257,7 @@ describe('useSources', () => {
     });
 
     expect(mockFilesApi.downloadMedia).toHaveBeenCalledWith('source-1', 'https://example.com/video.mp4');
-    expect(result.current.sources[0].attachments).toHaveLength(1);
+    expect(result.current.sources[0]!.attachments).toHaveLength(1);
   });
 
   it('timestamps an attachment', async () => {

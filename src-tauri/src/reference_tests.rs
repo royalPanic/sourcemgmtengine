@@ -10,9 +10,11 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::commands::entities::delete_entity_quality_from_pool;
     use crate::commands::references::{
-        inherited_rating, propagate_entity_rating, propagate_rating, reference_rating,
-        resolve_reference, validate_reference, InheritedRating, ReferenceError, ReferenceInput,
+        entity_reliability, inherited_rating, propagate_entity_rating, propagate_rating,
+        reference_rating, resolve_reference, validate_reference, InheritedRating, ReferenceError,
+        ReferenceInput,
     };
     use crate::models::models::ReferenceKind;
     use sqlx::sqlite::SqlitePoolOptions;
@@ -109,22 +111,19 @@ mod tests {
         .expect("insert source");
     }
 
-    async fn insert_entity(
-        pool: &sqlx::SqlitePool,
-        id: &str,
-        name: &str,
-    ) {
-        sqlx::query(
-            "INSERT INTO entities (id, name) VALUES (?, ?)",
-        )
-        .bind(id)
-        .bind(name)
-        .execute(pool)
-        .await
-        .expect("insert entity");
+    async fn insert_entity(pool: &sqlx::SqlitePool, id: &str, name: &str) {
+        sqlx::query("INSERT INTO entities (id, name) VALUES (?, ?)")
+            .bind(id)
+            .bind(name)
+            .execute(pool)
+            .await
+            .expect("insert entity");
     }
 
-    async fn rating(pool: &sqlx::SqlitePool, id: &str) -> (Option<String>, Option<i32>, Option<String>) {
+    async fn rating(
+        pool: &sqlx::SqlitePool,
+        id: &str,
+    ) -> (Option<String>, Option<i32>, Option<String>) {
         let row = sqlx::query(
             "SELECT reliability_code, credibility_code, stance FROM sources WHERE id = ?",
         )
@@ -188,10 +187,10 @@ mod tests {
             ReferenceError::SourceMissing
         );
         assert_eq!(
-        validate_reference(&pool, "case-1", "s1", &entity_ref("nope"))
+            validate_reference(&pool, "case-1", "s1", &entity_ref("nope"))
                 .await
-            .expect_err("missing entity"),
-        ReferenceError::EntityMissing
+                .expect_err("missing entity"),
+            ReferenceError::EntityMissing
         );
     }
 
@@ -271,7 +270,15 @@ mod tests {
     #[tokio::test]
     async fn editing_a_reference_propagates_down_the_chain() {
         let pool = pool().await;
-        insert_source(&pool, "core", "case-1", Some("C"), Some(3), Some("supports")).await;
+        insert_source(
+            &pool,
+            "core",
+            "case-1",
+            Some("C"),
+            Some(3),
+            Some("supports"),
+        )
+        .await;
         insert_source(&pool, "echo", "case-1", Some("C"), Some(3), None).await;
         insert_source(&pool, "echo2", "case-1", Some("C"), Some(3), None).await;
         sqlx::query("UPDATE sources SET reference_source_id = 'core' WHERE id = 'echo'")
@@ -283,14 +290,19 @@ mod tests {
             .await
             .unwrap();
 
-        sqlx::query("UPDATE sources SET reliability_code = 'A', credibility_code = 1 WHERE id = 'core'")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "UPDATE sources SET reliability_code = 'A', credibility_code = 1 WHERE id = 'core'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
-        propagate_rating(&pool, "core", &mut Vec::new()).await.unwrap();
+        propagate_rating(&pool, "core").await.unwrap();
 
-        assert_eq!(rating(&pool, "echo").await, (Some("A".into()), Some(1), None));
+        assert_eq!(
+            rating(&pool, "echo").await,
+            (Some("A".into()), Some(1), None)
+        );
         assert_eq!(
             rating(&pool, "echo2").await,
             (Some("A".into()), Some(1), None),
@@ -320,8 +332,65 @@ mod tests {
 
         propagate_entity_rating(&pool, "m1").await.unwrap();
 
-        assert_eq!(rating(&pool, "s1").await, (Some("F".into()), Some(2), Some("supports".into())));
-        assert_eq!(rating(&pool, "s2").await, (Some("F".into()), Some(2), Some("refutes".into())));
+        assert_eq!(
+            rating(&pool, "s1").await,
+            (Some("F".into()), Some(2), Some("supports".into()))
+        );
+        assert_eq!(
+            rating(&pool, "s2").await,
+            (Some("F".into()), Some(2), Some("refutes".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_entity_reliability_clears_citing_sources() {
+        let pool = pool().await;
+        insert_entity(&pool, "m1", "Reuters").await;
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'm1', 'Reliability', 'reliability', 'B')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        insert_source(&pool, "s1", "case-1", Some("B"), Some(3), Some("supports")).await;
+        sqlx::query("UPDATE sources SET reference_entity_id = 'm1' WHERE id = 's1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("UPDATE entity_qualities SET value_string = NULL WHERE id = 'q1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        propagate_entity_rating(&pool, "m1").await.unwrap();
+
+        assert_eq!(entity_reliability(&pool, "m1").await.unwrap(), None);
+        assert_eq!(
+            rating(&pool, "s1").await,
+            (None, Some(3), Some("supports".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_entity_reliability_clears_citing_sources() {
+        let pool = pool().await;
+        insert_entity(&pool, "m1", "Reuters").await;
+        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'm1', 'Reliability', 'reliability', 'B')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        insert_source(&pool, "s1", "case-1", Some("B"), Some(3), Some("supports")).await;
+        sqlx::query("UPDATE sources SET reference_entity_id = 'm1' WHERE id = 's1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        delete_entity_quality_from_pool(&pool, "q1")
+            .await
+            .expect("delete and propagate");
+
+        assert_eq!(
+            rating(&pool, "s1").await,
+            (None, Some(3), Some("supports".into()))
+        );
     }
 
     #[tokio::test]
@@ -339,22 +408,39 @@ mod tests {
             .await
             .unwrap();
 
-        propagate_rating(&pool, "a", &mut Vec::new())
+        propagate_rating(&pool, "a")
             .await
             .expect("propagation must not spin forever on bad data");
     }
 
     #[tokio::test]
-    async fn a_citing_source_never_keeps_a_stance() {        // Source-referenced: the stance is suppressed by propagation.
+    async fn a_citing_source_never_keeps_a_stance() {
+        // Source-referenced: the stance is suppressed by propagation.
         let pool = pool().await;
-        insert_source(&pool, "core", "case-1", Some("A"), Some(1), Some("supports")).await;
-        insert_source(&pool, "echo", "case-1", Some("A"), Some(1), Some("supports")).await;
+        insert_source(
+            &pool,
+            "core",
+            "case-1",
+            Some("A"),
+            Some(1),
+            Some("supports"),
+        )
+        .await;
+        insert_source(
+            &pool,
+            "echo",
+            "case-1",
+            Some("A"),
+            Some(1),
+            Some("supports"),
+        )
+        .await;
         sqlx::query("UPDATE sources SET reference_source_id = 'core' WHERE id = 'echo'")
             .execute(&pool)
             .await
             .unwrap();
 
-        propagate_rating(&pool, "core", &mut Vec::new()).await.unwrap();
+        propagate_rating(&pool, "core").await.unwrap();
 
         assert_eq!(rating(&pool, "echo").await.2, None);
         assert_eq!(
@@ -403,10 +489,12 @@ mod tests {
             .unwrap();
 
         // Mirrors `delete_entity`.
-        sqlx::query("UPDATE sources SET reference_entity_id = NULL WHERE reference_entity_id = 'm1'")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "UPDATE sources SET reference_entity_id = NULL WHERE reference_entity_id = 'm1'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query("DELETE FROM entities WHERE id = 'm1'")
             .execute(&pool)
             .await
@@ -444,7 +532,10 @@ mod tests {
             .await
             .unwrap()
             .is_none());
-        assert!(resolve_reference(&pool, None, None).await.unwrap().is_none());
+        assert!(resolve_reference(&pool, None, None)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     // --- inherited rating -------------------------------------------------
@@ -517,8 +608,16 @@ mod tests {
         let (reliability, credibility) =
             inherited.apply_to(Some(Some("F".to_string())), Some(Some(4)));
 
-        assert_eq!(reliability, Some(Some("B".to_string())), "entity wins reliability");
-        assert_eq!(credibility, Some(Some(4)), "the patched credibility survives");
+        assert_eq!(
+            reliability,
+            Some(Some("B".to_string())),
+            "entity wins reliability"
+        );
+        assert_eq!(
+            credibility,
+            Some(Some(4)),
+            "the patched credibility survives"
+        );
     }
 
     #[test]
@@ -541,5 +640,82 @@ mod tests {
 
         assert_eq!(reliability, None);
         assert_eq!(credibility, None);
+    }
+
+    /// The batched resolver must produce the same labels as the per-row path,
+    /// including for sources that cite nothing.
+    #[tokio::test]
+    async fn batched_resolution_matches_the_per_row_path() {
+        use crate::commands::references::resolve_references_for_sources;
+
+        let pool = pool().await;
+
+        sqlx::query("INSERT INTO cases (id) VALUES ('c1')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO entities (id, name) VALUES ('e1', 'Reuters')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO sources (id, case_id, title, reliability_code, credibility_code) \
+             VALUES ('core', 'c1', 'Core', 'A', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO sources (id, case_id, title, reference_source_id) \
+             VALUES ('echo', 'c1', 'Echo', 'core')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO sources (id, case_id, title, reference_entity_id) \
+             VALUES ('cite', 'c1', 'Cite', 'e1')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO sources (id, case_id, title) VALUES ('plain', 'c1', 'Plain')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let inputs = vec![
+            ("echo".to_string(), Some("core".to_string()), None::<String>),
+            ("cite".to_string(), None::<String>, Some("e1".to_string())),
+            ("plain".to_string(), None::<String>, None::<String>),
+        ];
+
+        let batched = resolve_references_for_sources(&pool, &inputs)
+            .await
+            .expect("batched resolution");
+
+        // Each row agrees with the per-row resolver.
+        for (id, source_ref, entity_ref) in &inputs {
+            let single = resolve_reference(&pool, source_ref.as_deref(), entity_ref.as_deref())
+                .await
+                .expect("per-row resolution");
+            assert_eq!(
+                batched.get(id).cloned().flatten(),
+                single,
+                "row {id} must resolve identically either way"
+            );
+        }
+
+        // And the labels are the ones the grid renders.
+        let echo = batched.get("echo").cloned().flatten().expect("echo ref");
+        assert_eq!(echo.kind, ReferenceKind::Source);
+        assert_eq!(echo.label, "Core");
+        assert_eq!(echo.reliability_code, Some("A".to_string()));
+
+        let cite = batched.get("cite").cloned().flatten().expect("cite ref");
+        assert_eq!(cite.kind, ReferenceKind::Entity);
+        assert_eq!(cite.label, "Reuters");
+
+        assert_eq!(batched.get("plain").cloned().flatten(), None);
     }
 }
