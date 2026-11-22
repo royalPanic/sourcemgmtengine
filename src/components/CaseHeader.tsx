@@ -4,7 +4,7 @@ import { formatEventDate } from './Sidebar';
 import { TimeInput } from './TimeInput';
 import { formatUtc } from '../utils/datetime';
 
-interface EventHeaderProps {
+interface CaseHeaderProps {
   container: Case;
   onUpdate: (id: string, params: Partial<{
     title: string;
@@ -15,10 +15,10 @@ interface EventHeaderProps {
 }
 
 /**
- * Editable banner for an event: title, date, and optional time. Changes are
+ * Editable banner for a case: title, date, and optional time. Changes are
  * committed on blur or Enter so the date stays editable without a modal.
  */
-export function EventHeader({ container, onUpdate }: EventHeaderProps) {
+export function CaseHeader({ container, onUpdate }: CaseHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(container.title);
   const [date, setDate] = useState(container.event_date ?? '');
@@ -89,7 +89,7 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
             className="btn-secondary text-xs shrink-0"
             onClick={() => setEditing(true)}
           >
-            Edit Event
+            Edit Case
           </button>
         </div>
       </div>
@@ -133,7 +133,7 @@ export function EventHeader({ container, onUpdate }: EventHeaderProps) {
               onChange={setTime}
               onValidityChange={setTimeValid}
               disabled={!date}
-              ariaLabel="Event time (24-hour, local)"
+              ariaLabel="Case time (24-hour, local)"
             />
           </div>
         </div>

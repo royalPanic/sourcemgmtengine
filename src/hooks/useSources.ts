@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { sourcesApi, filesApi } from '../api/tauri';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance } from '../types';
+import { sourcesApi, filesApi, timestampApi } from '../api/tauri';
+import type {
+  SourceWithAttachments,
+  SourceType,
+  SourceCustomMetadata,
+  Stance,
+  TimestampRecord,
+} from '../types';
 
 export function useSources(caseId: string | null) {
   const [sources, setSources] = useState<SourceWithAttachments[]>([]);
@@ -54,7 +60,7 @@ export function useSources(caseId: string | null) {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -80,41 +86,38 @@ export function useSources(caseId: string | null) {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
   }>) => {
     const updated = await sourcesApi.update(id, params);
-    await reloadQuietly();
+
+    // A rating change propagates to every source that cites this one, so those
+    // rows have to be re-read. A plain edit touches only this row, which is
+    // already patched in place below — refetching the whole list for a title
+    // change is wasted work.
+    const ratingTouched =
+      params.reliabilityCode !== undefined ||
+      params.credibilityCode !== undefined ||
+      params.referenceSourceId !== undefined ||
+      params.referenceEntityId !== undefined;
+
+    if (ratingTouched) {
+      await reloadQuietly();
+    } else {
+      setSources(prev => prev.map(s => (s.id === id ? { ...s, ...updated } : s)));
+    }
+
     return updated;
   };
 
   const deleteSource = async (id: string) => {
     await sourcesApi.delete(id);
     setSources(prev => prev.filter(s => s.id !== id));
-  };
-
-  const addAttachment = async (sourceId: string, file: File) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const data = new Uint8Array(arrayBuffer);
-    const relativePath = await filesApi.saveAttachment(sourceId, file.name, data);
-
-    const attachment = await sourcesApi.addAttachment({
-      sourceId,
-      fileName: file.name,
-      relativePath,
-      mimeType: file.type,
-      fileSize: file.size,
-    });
-
-    setSources(prev => prev.map(s =>
-      s.id === sourceId
-        ? { ...s, attachments: [...s.attachments, attachment] }
-        : s
-    ));
-
-    return attachment;
+    // Deleting a referenced source clears its citation links in SQLite; reload
+    // so citing rows stop showing a reference that no longer exists.
+    await reloadQuietly();
   };
 
   /**
@@ -151,11 +154,48 @@ export function useSources(caseId: string | null) {
     ));
   };
 
+  /**
+   * Downloads media from a source URL using the bundled yt-dlp sidecar and
+   * stores it as an attachment on the source. Network is only used when this
+   * is explicitly invoked.
+   */
+  const downloadMedia = async (sourceId: string, url: string) => {
+    const attachment = await filesApi.downloadMedia(sourceId, url);
+    setSources(prev => prev.map(s =>
+      s.id === sourceId
+        ? { ...s, attachments: [...s.attachments, attachment] }
+        : s
+    ));
+    return attachment;
+  };
+
   const openAttachment = async (relativePath: string) => {
     await filesApi.openAttachment(relativePath);
   };
 
   const getAttachmentUrl = (relativePath: string) => filesApi.assetUrl(relativePath);
+
+  /**
+     * Creates an OpenTimestamps timestamp proof for an attachment.
+     */
+    const timestampAttachment = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.timestampAttachment(attachmentId);
+    };
+
+    /**
+     * Re-checks an existing timestamp proof against the calendars and the
+     * Bitcoin blockchain, upgrading it if a confirmation is now available.
+     */
+    const verifyTimestamp = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.verifyTimestamp(attachmentId);
+    };
+
+    /**
+     * Gets the timestamp record for an attachment, if any.
+     */
+    const getTimestampStatus = async (attachmentId: string): Promise<TimestampRecord | null> => {
+      return timestampApi.getTimestampStatus(attachmentId);
+    };
 
   return {
     sources,
@@ -166,10 +206,13 @@ export function useSources(caseId: string | null) {
     createSource,
     updateSource,
     deleteSource,
-    addAttachment,
     importAttachment,
     deleteAttachment,
     openAttachment,
     getAttachmentUrl,
+    downloadMedia,
+    timestampAttachment,
+    verifyTimestamp,
+    getTimestampStatus,
   };
 }

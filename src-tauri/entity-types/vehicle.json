@@ -1,0 +1,27 @@
+{
+  "id": "vehicle",
+  "name": "Vehicle",
+  "description": "A car, truck, vessel, aircraft, or other conveyance.",
+  "default_qualities": [
+    {
+      "name": "Make",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "Model",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "Year",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "name": "VIN",
+      "type": "string",
+      "required": false
+    }
+  ]
+}

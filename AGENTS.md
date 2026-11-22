@@ -109,6 +109,26 @@ CREATE TABLE IF NOT EXISTS meta_sources (
 
 - Relative File Paths: Store relative relative paths inside source_attachments.relative_path rather than absolute system paths to preserve workspace portability across machines.
 
+### OpenTimestamps Proofs
+The timestamping subsystem is in `src-tauri/src/opentimestamps/`. It is consensus-critical, so treat the
+format as fixed rather than "cleanable".
+
+- **The format is not ours to change.** `serialize.rs`, `op.rs`, `attestation.rs`, and `timestamp.rs` implement
+  the OpenTimestamps proof format. Tags, LEB128 varuints, node ordering, and the magic header must match
+  `python-opentimestamps` byte-for-byte. Proofs written with different rules cannot be verified by any `ots`
+  client. `timestamp.rs` pins byte-for-byte against reference proofs; keep those vectors.
+
+- **Calendar responses are binary.** `POST <calendar>/digest` takes the raw 32-byte digest as the body and
+  returns a serialized `Timestamp` subtree. Never decode a calendar response as text — that silently corrupts
+  the attestation. The response is merged into the proof with `Timestamp::merge`, not stored verbatim.
+
+- **A calendar 200 is not a confirmation.** A proof is `confirmed` only after a `BitcoinBlockHeaderAttestation`
+  is checked against the real block header (`bitcoin.rs`) and the attested commitment matches that block's
+  merkle root. `verify_timestamp` leaves a proof `pending` whenever that check did not actually pass.
+
+- **Proofs live at `<relative_path>.ots`.** The suffix keeps `photo.png` and `photo.jpg` from colliding.
+  Deleting an attachment removes its proof; `record_timestamp` upserts so an unreadable proof can be replaced.
+
 ### Meta Sources and Source References
 These two features are coupled; changing one means checking the other.
 

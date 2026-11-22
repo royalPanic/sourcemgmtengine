@@ -1,20 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance } from '../types';
-import {
-  SOURCE_TYPES,
-  RELIABILITY_CODES,
-  CREDIBILITY_CODES,
-  RELIABILITY_DEFINITIONS,
-  CREDIBILITY_DEFINITIONS,
-  STANCES,
-  STANCE_DEFINITIONS,
-  STANCE_NONE_LABEL,
-} from '../types';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, Stance, Entity, TimestampRecord } from '../types';
+import { mediaKind } from '../types';
 import { MediaPreview } from './MediaPreview';
-import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, locksStance, referenceIds, referenceRating, selectionOf, type ReferenceSelection } from './ReferenceSelect';
-import type { MetaSourceSummary } from '../types';
+import { SourceFields } from './SourceFields';
+import { useSourceForm, type SourceFormInitial } from './useSourceForm';
+import { selectionOf } from './ReferenceSelect';
 import { pickFile, type PickerMode } from '../utils/filePicker';
+import { confirmNative } from '../utils/dialog';
 import { readLocation, isValidCoordinate, formatCoordinate, LAT_KEY, LON_KEY, LOCATION_LABEL_KEY } from '../utils/geo';
 import {
   COORDINATE_FORMATS,
@@ -29,10 +21,9 @@ interface DetailDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   source: SourceWithAttachments | null;
-  isEvent: boolean;
   /** Sibling sources in the same container, for the reference dropdown. */
   siblings: SourceWithAttachments[];
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onUpdate: (id: string, params: Partial<{
     title: string;
     sourceType: SourceType;
@@ -42,7 +33,7 @@ interface DetailDrawerProps {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -51,32 +42,35 @@ interface DetailDrawerProps {
   onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
   onOpenAttachment: (relativePath: string) => Promise<void>;
   resolveAttachmentUrl: (relativePath: string) => Promise<string>;
+  downloadMedia: (sourceId: string, url: string) => Promise<unknown>;
+    timestampAttachment: (attachmentId: string) => Promise<TimestampRecord>;
+    verifyTimestamp: (attachmentId: string) => Promise<TimestampRecord>;
+    getTimestampStatus: (attachmentId: string) => Promise<TimestampRecord | null>;
 }
 
 export function DetailDrawer({
   isOpen,
   onClose,
   source,
-  isEvent,
   siblings,
-  metaSources,
+  entities,
   onUpdate,
   onImportAttachment,
   onDeleteAttachment,
   onOpenAttachment,
   resolveAttachmentUrl,
-}: DetailDrawerProps) {
-  const [title, setTitle] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('URL');
-  const [url, setUrl] = useState('');
-  const [rawText, setRawText] = useState('');
-  const [reliabilityCode, setReliabilityCode] = useState('');
-  const [credibilityCode, setCredibilityCode] = useState('');
-  const [stance, setStance] = useState('');
-  const [reference, setReference] = useState<ReferenceSelection>({ kind: 'none', id: '' });
-  const [sourceDate, setSourceDate] = useState('');
-  const [sourceTime, setSourceTime] = useState('');
-  const [timeValid, setTimeValid] = useState(true);
+  downloadMedia,
+  timestampAttachment,
+  verifyTimestamp,
+    getTimestampStatus,
+  }: DetailDrawerProps) {
+  // The form owns the shared fields; the drawer adds location on top. It is
+  // seeded from the open source, so switching sources remounts the fields.
+  const form = useSourceForm({
+    siblings,
+    entities,
+    initial: source ? toFormInitial(source) : undefined,
+  });
   const [locationLabel, setLocationLabel] = useState('');
   const [coordFormat, setCoordFormat] = useState<CoordinateFormat>('dd');
   // Canonical decimal degrees. The text field is only a rendering of this, so
@@ -90,21 +84,16 @@ export function DetailDrawer({
   coordFormatRef.current = coordFormat;
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [timestamping, setTimestamping] = useState<Set<string>>(new Set());
+  const [timestampError, setTimestampError] = useState<Record<string, string>>({});
+  const [timestamps, setTimestamps] = useState<Record<string, TimestampRecord>>({});
 
   useEffect(() => {
     if (!source) return;
-    setTitle(source.title);
-    setSourceType(source.source_type);
-    setUrl(source.url ?? '');
-    setRawText(source.raw_text ?? '');
-    setReliabilityCode(source.reliability_code ?? '');
-    setCredibilityCode(source.credibility_code ? String(source.credibility_code) : '');
-    setStance(source.stance ?? '');
-    setReference(selectionOf(source));
-    setSourceDate(source.source_date ?? '');
-    setSourceTime(source.source_time ?? '');
 
     const location = readLocation(source.custom_metadata);
     setCoord(location ? { lat: location.lat, lon: location.lon } : null);
@@ -112,7 +101,6 @@ export function DetailDrawer({
     setCoordError(null);
     setLocationLabel(location?.label ?? '');
 
-    setUploadError(null);
     setSaveError(null);
   }, [source]);
 
@@ -125,7 +113,40 @@ export function DetailDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !source) return null;
+    // Load the stored timestamp for every attachment when the drawer opens, so
+    // an already-stamped item shows its real state instead of offering to stamp
+    // it again.
+    const attachmentIds = source?.attachments.map(a => a.id).join(',') ?? '';
+
+    useEffect(() => {
+      if (!isOpen || !attachmentIds) {
+        setTimestamps({});
+        return;
+      }
+
+      let cancelled = false;
+      const ids = attachmentIds.split(',').filter(Boolean);
+
+      void (async () => {
+        const loaded: Record<string, TimestampRecord> = {};
+        for (const id of ids) {
+          try {
+            const record = await getTimestampStatus(id);
+            if (record) loaded[id] = record;
+          } catch {
+            // A missing or unreadable status is not fatal; the attachment simply
+            // shows no timestamp.
+          }
+        }
+        if (!cancelled) setTimestamps(loaded);
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, attachmentIds, getTimestampStatus]);
+
+    if (!isOpen || !source) return null;
 
   /**
    * Switches notation and rewrites the field in place, so the value can be
@@ -190,23 +211,22 @@ export function DetailDrawer({
 
     setSaving(true);
     try {
-      const isReferenced = locksStance(reference);
+      // The form assembles the shared fields; the drawer adds the location.
+      const values = form.values();
+      if (!values) {
+        setSaveError('A title is required.');
+        return;
+      }
+
       await onUpdate(source.id, {
-        title: title.trim(),
-        sourceType,
-        url,
-        rawText,
+        ...values,
         // Empty string / 0 clear the stored rating; the backend maps them to
         // NULL. Sending `undefined` would leave the old value in place.
-        reliabilityCode,
-        credibilityCode: credibilityCode ? Number(credibilityCode) : 0,
-        // A source that duplicates another capture carries no stance; the
-        // backend enforces this too. Meta-referenced sources keep theirs.
-        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
-        ...referenceIds(reference),
+        reliabilityCode: values.reliabilityCode ?? '',
+        credibilityCode: values.credibilityCode ?? 0,
         // Empty strings clear the stored values.
-        sourceDate,
-        sourceTime: sourceDate ? sourceTime : '',
+        sourceDate: values.sourceDate ?? '',
+        sourceTime: values.sourceDate ? values.sourceTime ?? '' : '',
         customMetadata,
       });
     } catch (err) {
@@ -230,19 +250,166 @@ export function DetailDrawer({
     }
   };
 
-  const handleDeleteAttachment = (attachment: SourceAttachment) => {
-    if (window.confirm(`Delete attachment "${attachment.file_name}"?`)) {
-      void onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
+  const handleDownloadMedia = async () => {
+    if (!source.url) return;
+    setDownloadError(null);
+    const confirmed = await confirmNative(
+      `Download media from "${source.url}" and preserve it as an attachment?\n\nThis uses the network and may take a while for large files.`,
+      'Download Media',
+      false,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDownloading(true);
+    try {
+      await downloadMedia(source.id, source.url);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const media = source.attachments.filter(a => {
-    const mime = a.mime_type?.toLowerCase() ?? '';
-    return mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/');
-  });
-  const documents = source.attachments.filter(a => !media.includes(a));
+  const handleTimestampAttachment = async (attachmentId: string) => {
+      setTimestampError((prev) => {
+        const next = { ...prev };
+        delete next[attachmentId];
+        return next;
+      });
+      setTimestamping((prev) => new Set([...prev, attachmentId]));
+      try {
+        const record = await timestampAttachment(attachmentId);
+        setTimestamps((prev) => ({ ...prev, [attachmentId]: record }));
+      } catch (err) {
+        setTimestampError((prev) => ({
+          ...prev,
+          [attachmentId]: err instanceof Error ? err.message : String(err),
+        }));
+      } finally {
+        setTimestamping((prev) => {
+          const next = new Set(prev);
+          next.delete(attachmentId);
+          return next;
+        });
+      }
+    };
 
-  return (
+    const handleVerifyTimestamp = async (attachmentId: string) => {
+      setTimestampError((prev) => {
+        const next = { ...prev };
+        delete next[attachmentId];
+        return next;
+      });
+      setTimestamping((prev) => new Set([...prev, attachmentId]));
+      try {
+        const record = await verifyTimestamp(attachmentId);
+        setTimestamps((prev) => ({ ...prev, [attachmentId]: record }));
+      } catch (err) {
+        setTimestampError((prev) => ({
+          ...prev,
+          [attachmentId]: err instanceof Error ? err.message : String(err),
+        }));
+      } finally {
+        setTimestamping((prev) => {
+          const next = new Set(prev);
+          next.delete(attachmentId);
+          return next;
+        });
+      }
+    };
+
+  const handleDeleteAttachment = async (attachment: SourceAttachment) => {
+    const confirmed = await confirmNative(
+      `Delete attachment "${attachment.file_name}"?`,
+      'Delete Attachment',
+    );
+    if (!confirmed) return;
+    await onDeleteAttachment(source.id, attachment.id, attachment.relative_path);
+  };
+
+  // Classify through the shared helper so the drawer and MediaPreview always
+  // agree; a MIME-only check here would list a video as a document whenever
+  // the stored MIME type was generic (e.g. application/octet-stream).
+  const media = source.attachments.filter(a => mediaKind(a) !== 'other');
+  const documents = source.attachments.filter(a => mediaKind(a) === 'other');
+
+    /**
+     * Renders one attachment with its OpenTimestamps controls.
+     *
+     * A pending timestamp offers "Verify" because the calendar only publishes a
+     * blockchain attestation once its aggregation transaction is mined, which
+     * takes hours. A confirmed timestamp shows the attested block so the operator
+     * can see *what* proved the file's existence.
+     */
+    const renderAttachment = (attachment: SourceAttachment) => {
+      const ts = timestamps[attachment.id];
+      const isTimestamping = timestamping.has(attachment.id);
+      const tsError = timestampError[attachment.id];
+
+      const statusClass =
+        ts?.status === 'confirmed'
+          ? 'bg-emerald-500/20 text-emerald-400'
+          : ts?.status === 'failed'
+            ? 'bg-red-500/20 text-red-400'
+            : 'bg-amber-500/20 text-amber-400';
+
+      return (
+        <div key={attachment.id} className="flex flex-col gap-1">
+          <MediaPreview
+            attachment={attachment}
+            resolveUrl={resolveAttachmentUrl}
+            onOpen={(path) => void onOpenAttachment(path)}
+            onDelete={handleDeleteAttachment}
+          />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className="btn-secondary text-[10px] px-2 py-1"
+              onClick={() => void handleTimestampAttachment(attachment.id)}
+              disabled={isTimestamping || !!ts}
+              title="Create OpenTimestamps proof for this attachment"
+            >
+              {isTimestamping ? 'Timestamping…' : ts ? 'Timestamped' : 'Timestamp'}
+            </button>
+            {ts && ts.status !== 'failed' && (
+              <button
+                type="button"
+                className="btn-secondary text-[10px] px-2 py-1"
+                onClick={() => void handleVerifyTimestamp(attachment.id)}
+                disabled={isTimestamping}
+                title={
+                  ts.status === 'confirmed'
+                    ? 'Re-verify the Bitcoin block attestation'
+                    : 'Ask the calendars whether a Bitcoin attestation is available yet'
+                }
+              >
+                {isTimestamping ? 'Checking…' : 'Verify'}
+              </button>
+            )}
+            {ts && (
+              <span className={`text-[10px] px-2 py-1 rounded ${statusClass}`}>
+                {ts.status}
+                {ts.block_height !== null && ts.block_height !== undefined
+                  ? ` · block ${ts.block_height}`
+                  : ''}
+              </span>
+            )}
+          </div>
+          {ts?.block_time && (
+            <p className="text-[10px] text-zinc-500">
+              Bitcoin block time: {new Date(ts.block_time).toLocaleString()}
+            </p>
+          )}
+          {tsError && <p className="text-[10px] text-red-400">{tsError}</p>}
+          {!tsError && ts?.verification_notes?.length ? (
+            <p className="text-[10px] text-zinc-500">{ts.verification_notes.join(' · ')}</p>
+          ) : null}
+        </div>
+      );
+    };
+
+    return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <aside className="relative w-full max-w-xl h-full bg-zinc-900 border-l border-zinc-800 flex flex-col shadow-2xl">
@@ -256,136 +423,13 @@ export function DetailDrawer({
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-1">Title</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="input" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value as SourceType)}
-              className="select"
-            >
-              {SOURCE_TYPES.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">URL</label>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} className="input" placeholder="https://…" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Raw Text</label>
-            <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="textarea" rows={5} />
-          </div>
-
-          <SourceDateTimeFields
-            date={sourceDate}
-            time={sourceTime}
-            onChange={({ date, time }) => {
-              setSourceDate(date);
-              setSourceTime(time);
-            }}
-            onValidityChange={setTimeValid}
+          <SourceFields
+            form={form}
+            siblings={siblings}
+            entities={entities}
+            disabled={saving}
           />
 
-          <section className="card p-4">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Provenance</h3>
-            <ReferenceSelect
-              value={reference}
-              siblings={siblings}
-              metaSources={metaSources}
-              disabled={saving}
-              onChange={(next) => {
-                setReference(next);
-                // Mirror the reference's rating as the default. Live sync means
-                // the backend re-applies it on save anyway, but showing the
-                // value here makes the inheritance visible before committing.
-                const rating = referenceRating(next, siblings, metaSources);
-                setReliabilityCode(rating?.reliability_code ?? '');
-                setCredibilityCode(
-                  rating?.credibility_code ? String(rating.credibility_code) : ''
-                );
-                // Only a duplicate of another capture loses its stance.
-                if (locksStance(next)) setStance('');
-              }}
-            />
-          </section>
-
-          <section className="card p-4">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">NATO Admiralty Rating</h3>
-
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Source Reliability (A–F)</label>
-              <select value={reliabilityCode} onChange={(e) => setReliabilityCode(e.target.value)} className="select">
-                <option value="">Not rated</option>
-                {RELIABILITY_CODES.map(code => (
-                  <option key={code} value={code}>{RELIABILITY_DEFINITIONS[code].label}</option>
-                ))}
-              </select>
-              {reliabilityCode && (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {RELIABILITY_DEFINITIONS[reliabilityCode as keyof typeof RELIABILITY_DEFINITIONS].description}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Information Credibility (1–6)</label>
-              <select value={credibilityCode} onChange={(e) => setCredibilityCode(e.target.value)} className="select">
-                <option value="">Not rated</option>
-                {CREDIBILITY_CODES.map(code => (
-                  <option key={code} value={code}>{CREDIBILITY_DEFINITIONS[code].label}</option>
-                ))}
-              </select>
-              {credibilityCode && (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {CREDIBILITY_DEFINITIONS[Number(credibilityCode) as keyof typeof CREDIBILITY_DEFINITIONS].description}
-                </p>
-              )}
-            </div>
-          </section>
-
-          {isEvent && (
-            <section className="card p-4">
-              <h3 className="text-sm font-semibold text-zinc-200 mb-3">Stance on Event</h3>
-              <select
-                value={locksStance(reference) ? '' : stance}
-                onChange={(e) => setStance(e.target.value)}
-                className="select"
-                disabled={locksStance(reference)}
-                title={
-                  locksStance(reference)
-                    ? 'A source that duplicates another capture carries no stance'
-                    : undefined
-                }
-              >
-                <option value="">{STANCE_NONE_LABEL}</option>
-                {STANCES.map(value => (
-                  <option key={value} value={value}>{STANCE_DEFINITIONS[value].label}</option>
-                ))}
-              </select>
-              {locksStance(reference) ? (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  Locked to none while this source references another capture. A duplicate must
-                  not count as independent corroboration.
-                </p>
-              ) : stance ? (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  {STANCE_DEFINITIONS[stance as Stance].description}
-                </p>
-              ) : (
-                <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
-                  No stance recorded. Use this when the source does not bear on the event.
-                </p>
-              )}
-            </section>
-          )}
 
           <section>
             <div className="flex items-center justify-between mb-2">
@@ -397,7 +441,7 @@ export function DetailDrawer({
                   type="button"
                   className="btn-secondary text-xs"
                   onClick={() => void handleAttach('media')}
-                  disabled={uploading}
+                  disabled={uploading || downloading}
                   title="Attach an image, video, or audio file"
                 >
                   {uploading ? 'Importing…' : 'Add Media'}
@@ -406,11 +450,22 @@ export function DetailDrawer({
                   type="button"
                   className="btn-secondary text-xs"
                   onClick={() => void handleAttach('any')}
-                  disabled={uploading}
+                  disabled={uploading || downloading}
                   title="Attach any file"
                 >
                   Add File
                 </button>
+                {source.url && (
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs"
+                    onClick={handleDownloadMedia}
+                    disabled={downloading || !source.url}
+                    title="Download the image or video at this URL and preserve it as an attachment"
+                  >
+                    {downloading ? 'Downloading…' : 'Download Media'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -418,39 +473,27 @@ export function DetailDrawer({
               <p className="mb-2 text-xs text-red-400">{uploadError}</p>
             )}
 
+            {downloadError && (
+              <p className="mb-2 text-xs text-red-400">{downloadError}</p>
+            )}
+
             {source.attachments.length === 0 ? (
               <p className="text-xs text-zinc-500">No attachments.</p>
             ) : (
               <div className="space-y-3">
-                {media.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {media.map(attachment => (
-                      <MediaPreview
-                        key={attachment.id}
-                        attachment={attachment}
-                        resolveUrl={resolveAttachmentUrl}
-                        onOpen={(path) => void onOpenAttachment(path)}
-                        onDelete={handleDeleteAttachment}
-                      />
-                    ))}
-                  </div>
-                )}
-                {documents.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {documents.map(attachment => (
-                      <MediaPreview
-                        key={attachment.id}
-                        attachment={attachment}
-                        resolveUrl={resolveAttachmentUrl}
-                        onOpen={(path) => void onOpenAttachment(path)}
-                        onDelete={handleDeleteAttachment}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+                              {media.length > 0 && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {media.map(attachment => renderAttachment(attachment))}
+                                </div>
+                              )}
+                              {documents.length > 0 && (
+                                <div className="grid grid-cols-2 gap-2">
+                                  {documents.map(attachment => renderAttachment(attachment))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </section>
 
           <section className="card p-4">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">Location</h3>
@@ -527,7 +570,7 @@ export function DetailDrawer({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={saving}>
               Close
             </button>
-            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !title.trim() || !timeValid}>
+            <button type="button" onClick={handleSave} className="btn-primary" disabled={saving || !form.canSubmit}>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
@@ -568,4 +611,20 @@ function parseMetadata(raw: string): SourceCustomMetadata {
     // fall through
   }
   return {};
+}
+
+/** Projects a stored source onto the shared form's initial values. */
+function toFormInitial(source: SourceWithAttachments): SourceFormInitial {
+  return {
+    title: source.title,
+    sourceType: source.source_type,
+    url: source.url,
+    rawText: source.raw_text,
+    reliabilityCode: source.reliability_code,
+    credibilityCode: source.credibility_code,
+    stance: source.stance,
+    reference: selectionOf(source),
+    sourceDate: source.source_date,
+    sourceTime: source.source_time,
+  };
 }

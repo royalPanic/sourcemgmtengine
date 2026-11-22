@@ -1,25 +1,24 @@
-import { useState } from 'react';
-import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, MetaSourceSummary } from '../types';
-import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect, locksStance, referenceIds, referenceRating, type ReferenceSelection } from './ReferenceSelect';
+import { useMemo, useState } from 'react';
+import type { SourceWithAttachments, SourceType, SourceCustomMetadata, Stance, Entity } from '../types';
 import { formatEventDate } from './Sidebar';
 import { formatUtc } from '../utils/datetime';
+import { SourceFields } from './SourceFields';
+import { useSourceForm } from './useSourceForm';
 import {
-  SOURCE_TYPES,
-  RELIABILITY_CODES,
-  CREDIBILITY_CODES,
-  RELIABILITY_DEFINITIONS,
-  CREDIBILITY_DEFINITIONS,
-  STANCES,
-  STANCE_DEFINITIONS,
-  STANCE_NONE_LABEL,
-} from '../types';
+  compareSources,
+  loadSourceSort,
+  nextSort,
+  saveSourceSort,
+  type SourceSort,
+  type SourceSortField,
+} from '../utils/sourceSort';
+import { STANCE_DEFINITIONS, RELIABILITY_DEFINITIONS, CREDIBILITY_DEFINITIONS } from '../types';
+import { confirmNative } from '../utils/dialog';
 
 interface SourcesGridProps {
   sources: SourceWithAttachments[];
   loading: boolean;
-  isEvent: boolean;
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onCreateSource: (params: {
     title: string;
     sourceType: SourceType;
@@ -29,42 +28,36 @@ interface SourcesGridProps {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
   }) => Promise<SourceWithAttachments>;
-  onUpdateSource: (id: string, params: Partial<{
-    title: string;
-    sourceType: SourceType;
-    url: string;
-    rawText: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-    stance: Stance;
-    referenceSourceId: string;
-    referenceMetaSourceId: string;
-    sourceDate: string;
-    sourceTime: string;
-    customMetadata: SourceCustomMetadata;
-  }>) => Promise<unknown>;
   onDeleteSource: (id: string) => Promise<void>;
-  onImportAttachment: (sourceId: string, sourcePath: string) => Promise<unknown>;
-  onDeleteAttachment: (sourceId: string, attachmentId: string, relativePath: string) => Promise<void>;
-  onOpenAttachment: (relativePath: string) => Promise<void>;
   onOpenDetail: (source: SourceWithAttachments) => void;
 }
 
 export function SourcesGrid({
   sources,
   loading,
-  isEvent,
-  metaSources,
+  entities,
   onCreateSource,
   onDeleteSource,
   onOpenDetail,
 }: SourcesGridProps) {
   const [showNewSource, setShowNewSource] = useState(false);
+  const [sort, setSort] = useState<SourceSort>(loadSourceSort);
+
+  const sortedSources = useMemo(
+    () => [...sources].sort((a, b) => compareSources(a, b, sort)),
+    [sources, sort]
+  );
+
+  const changeSort = (field: SourceSortField) => {
+    const next = nextSort(sort, field);
+    setSort(next);
+    saveSourceSort(next);
+  };
 
   if (loading) {
     return (
@@ -106,16 +99,28 @@ export function SourcesGrid({
               <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Type</th>
-                <th className="px-4 py-2 font-medium">Date</th>
+                <SortableHeader
+                  label="Date"
+                  field="source_date"
+                  sort={sort}
+                  onSort={changeSort}
+                  title="Sort by the source's own date and time"
+                />
                 <th className="px-4 py-2 font-medium">Admiralty</th>
-                {isEvent && <th className="px-4 py-2 font-medium">Stance</th>}
+                <th className="px-4 py-2 font-medium">Stance</th>
                 <th className="px-4 py-2 font-medium">Attachments</th>
-                <th className="px-4 py-2 font-medium">Updated</th>
+                <SortableHeader
+                  label="Updated"
+                  field="updated_at"
+                  sort={sort}
+                  onSort={changeSort}
+                  title="Sort by when the source record was last edited"
+                />
                 <th className="px-4 py-2" />
               </tr>
             </thead>
             <tbody>
-              {sources.map(source => (
+              {sortedSources.map(source => (
                 <tr
                   key={source.id}
                   className="border-b border-zinc-800/60 hover:bg-zinc-800/30 cursor-pointer"
@@ -127,14 +132,14 @@ export function SourcesGrid({
                       <div
                         className="text-xs text-amber-400/70 truncate max-w-xs"
                         title={
-                          source.reference.kind === 'meta'
-                            ? 'References a meta source'
+                          source.reference.kind === 'entity'
+                            ? 'References an entity'
                             : 'References another source in this container'
                         }
                       >
                         via {source.reference.label}
-                        {source.reference.kind === 'meta' && (
-                          <span className="text-zinc-500"> · meta</span>
+                        {source.reference.kind === 'entity' && (
+                          <span className="text-zinc-500"> · entity</span>
                         )}
                       </div>
                     )}
@@ -181,11 +186,9 @@ export function SourcesGrid({
                       )}
                     </div>
                   </td>
-                  {isEvent && (
-                    <td className="px-4 py-3">
-                      <StanceBadge stance={source.stance} />
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <StanceBadge stance={source.stance} />
+                  </td>
                   <td className="px-4 py-3 text-zinc-400">{source.attachments.length}</td>
                   <td className="px-4 py-3 text-zinc-500 text-xs">{formatDate(source.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
@@ -193,11 +196,13 @@ export function SourcesGrid({
                       type="button"
                       className="btn-ghost p-1.5 text-red-400 hover:bg-red-600/20"
                       title="Delete source"
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (window.confirm(`Delete source "${source.title}"?`)) {
-                          void onDeleteSource(source.id);
-                        }
+                        const confirmed = await confirmNative(
+                          `Delete source "${source.title}"?`,
+                          'Delete Source',
+                        );
+                        if (confirmed) await onDeleteSource(source.id);
                       }}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,9 +219,8 @@ export function SourcesGrid({
 
       {showNewSource && (
         <NewSourceModal
-          isEvent={isEvent}
           siblings={sources}
-          metaSources={metaSources}
+          entities={entities}
           onClose={() => setShowNewSource(false)}
           onSubmit={async (params) => {
             await onCreateSource(params);
@@ -225,6 +229,50 @@ export function SourcesGrid({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A column header that sorts the grid.
+ *
+ * The button fills the cell so the whole header is clickable, and `aria-sort`
+ * on the `th` tells assistive tech which column is active.
+ */
+function SortableHeader({
+  label,
+  field,
+  sort,
+  onSort,
+  title,
+}: {
+  label: string;
+  field: SourceSortField;
+  sort: SourceSort;
+  onSort: (field: SourceSortField) => void;
+  title: string;
+}) {
+  const active = sort.field === field;
+  const ascending = sort.direction === 'asc';
+
+  return (
+    <th
+      className="px-4 py-2 font-medium"
+      aria-sort={active ? (ascending ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className={`flex w-full items-center gap-1 uppercase tracking-wide transition-colors hover:text-zinc-200 ${
+          active ? 'text-amber-400' : ''
+        }`}
+        onClick={() => onSort(field)}
+        title={`${title} (${active && ascending ? 'oldest first' : 'newest first'})`}
+      >
+        {label}
+        <span aria-hidden="true" className={active ? '' : 'opacity-30'}>
+          {active && ascending ? '▲' : '▼'}
+        </span>
+      </button>
+    </th>
   );
 }
 
@@ -247,15 +295,13 @@ export function StanceBadge({ stance }: { stance: Stance | null }) {
 }
 
 function NewSourceModal({
-  isEvent,
   siblings,
-  metaSources,
+  entities,
   onClose,
   onSubmit,
 }: {
-  isEvent: boolean;
   siblings: SourceWithAttachments[];
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   onClose: () => void;
   onSubmit: (params: {
     title: string;
@@ -266,46 +312,24 @@ function NewSourceModal({
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
   }) => Promise<void>;
 }) {
-  const [title, setTitle] = useState('');
-  const [sourceType, setSourceType] = useState<SourceType>('URL');
-  const [url, setUrl] = useState('');
-  const [rawText, setRawText] = useState('');
-  const [reliabilityCode, setReliabilityCode] = useState('');
-  const [credibilityCode, setCredibilityCode] = useState('');
-  const [stance, setStance] = useState('');
-  const [reference, setReference] = useState<ReferenceSelection>({ kind: 'none', id: '' });
-  const [sourceDate, setSourceDate] = useState('');
-  const [sourceTime, setSourceTime] = useState('');
-  const [timeValid, setTimeValid] = useState(true);
+  const form = useSourceForm({ siblings, entities });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    const values = form.values();
+    if (!values) return;
+
     setError(null);
     setSubmitting(true);
     try {
-      const isReferenced = locksStance(reference);
-      await onSubmit({
-        title: title.trim(),
-        sourceType,
-        url: url.trim() || undefined,
-        rawText: rawText.trim() || undefined,
-        reliabilityCode: reliabilityCode || undefined,
-        credibilityCode: credibilityCode ? Number(credibilityCode) : undefined,
-        // A source that duplicates another capture carries no stance; the
-        // backend enforces this too. Meta-referenced sources keep theirs.
-        stance: isEvent && !isReferenced && stance ? (stance as Stance) : undefined,
-        ...referenceIds(reference),
-        sourceDate: sourceDate || undefined,
-        sourceTime: sourceDate && sourceTime ? sourceTime : undefined,
-      });
+      await onSubmit(values);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -318,150 +342,13 @@ function NewSourceModal({
       <div className="w-full max-w-lg mx-4 card p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold mb-4">Add Source</h2>
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input"
-              placeholder="Source title"
-              autoFocus
-              required
-            />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value as SourceType)}
-              className="select"
-            >
-              {SOURCE_TYPES.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">URL</label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="input"
-              placeholder="https://…"
-            />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1">Raw Text</label>
-            <textarea
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              className="textarea"
-              placeholder="Captured source content"
-              rows={3}
-            />
-          </div>
-
-          <div className="mb-4">
-            <SourceDateTimeFields
-              date={sourceDate}
-              time={sourceTime}
-              onChange={({ date, time }) => {
-                setSourceDate(date);
-                setSourceTime(time);
-              }}
-              onValidityChange={setTimeValid}
-            />
-          </div>
-
-          <div className="mb-4">
-            <ReferenceSelect
-              value={reference}
-              siblings={siblings}
-              metaSources={metaSources}
-              disabled={submitting}
-              onChange={(next) => {
-                setReference(next);
-                // Mirror the reference's rating as the default.
-                const rating = referenceRating(next, siblings, metaSources);
-                setReliabilityCode(rating?.reliability_code ?? '');
-                setCredibilityCode(
-                  rating?.credibility_code ? String(rating.credibility_code) : ''
-                );
-                if (locksStance(next)) setStance('');
-              }}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Source Reliability</label>
-              <select
-                value={reliabilityCode}
-                onChange={(e) => setReliabilityCode(e.target.value)}
-                className="select"
-              >
-                <option value="">Not rated</option>
-                {RELIABILITY_CODES.map(code => (
-                  <option key={code} value={code} title={RELIABILITY_DEFINITIONS[code].description}>
-                    {RELIABILITY_DEFINITIONS[code].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Information Credibility</label>
-              <select
-                value={credibilityCode}
-                onChange={(e) => setCredibilityCode(e.target.value)}
-                className="select"
-              >
-                <option value="">Not rated</option>
-                {CREDIBILITY_CODES.map(code => (
-                  <option key={code} value={code} title={CREDIBILITY_DEFINITIONS[code].description}>
-                    {CREDIBILITY_DEFINITIONS[code].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {isEvent && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Stance on Event</label>
-              <select
-                value={locksStance(reference) ? '' : stance}
-                onChange={(e) => setStance(e.target.value)}
-                className="select"
-                disabled={locksStance(reference)}
-                title={
-                  locksStance(reference)
-                    ? 'A source that duplicates another capture carries no stance'
-                    : undefined
-                }
-              >
-                <option value="">{STANCE_NONE_LABEL}</option>
-                {STANCES.map(value => (
-                  <option key={value} value={value} title={STANCE_DEFINITIONS[value].description}>
-                    {STANCE_DEFINITIONS[value].label}
-                  </option>
-                ))}
-              </select>
-              {locksStance(reference) ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Locked to none: this duplicates another capture.
-                </p>
-              ) : stance ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  {STANCE_DEFINITIONS[stance as Stance].description}
-                </p>
-              ) : null}
-            </div>
-          )}
+          <SourceFields
+            form={form}
+            siblings={siblings}
+            entities={entities}
+            disabled={submitting}
+            provenanceTitle={undefined}
+          />
 
           {error && <p className="mb-4 text-xs text-red-400">{error}</p>}
 
@@ -469,7 +356,11 @@ function NewSourceModal({
             <button type="button" onClick={onClose} className="btn-secondary" disabled={submitting}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={submitting || !title.trim() || !timeValid}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={submitting || !form.canSubmit}
+            >
               {submitting ? 'Adding…' : 'Add Source'}
             </button>
           </div>

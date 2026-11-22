@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { casesApi } from '../api/tauri';
-import type { Case, CaseNote, ContainerKind } from '../types';
+import type { Case, CaseNote } from '../types';
 
 export function useCases() {
   const [cases, setCases] = useState<Case[]>([]);
@@ -27,7 +27,6 @@ export function useCases() {
   const createCase = async (params: {
     title: string;
     description?: string;
-    kind?: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => {
@@ -67,35 +66,61 @@ export function useCaseNote(caseId: string | null) {
   const [note, setNote] = useState<CaseNote | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const requestIdRef = useRef(0);
+  const activeCaseIdRef = useRef(caseId);
+  activeCaseIdRef.current = caseId;
 
   const loadNote = useCallback(async () => {
-    if (!caseId) return;
+    const requestId = ++requestIdRef.current;
+    if (!caseId) {
+      setNote(null);
+      setLoading(false);
+      setSaving(false);
+      return;
+    }
     try {
       setLoading(true);
       const data = await casesApi.getNote(caseId);
-      setNote(data);
+      if (requestId === requestIdRef.current) {
+        setNote(data);
+      }
     } catch (err) {
-      console.error('Failed to load note:', err);
+      if (requestId === requestIdRef.current) {
+        console.error('Failed to load note:', err);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setSaving(false);
+      }
     }
   }, [caseId]);
 
   useEffect(() => {
-    loadNote();
+    void loadNote();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadNote]);
 
   const saveNote = async (content: string) => {
-    if (!caseId) return;
+    const saveCaseId = caseId;
+    if (!saveCaseId) return;
     try {
-      setSaving(true);
-      const saved = await casesApi.updateNote(caseId, content);
-      setNote(saved);
+      if (activeCaseIdRef.current === saveCaseId) {
+        setSaving(true);
+      }
+      const saved = await casesApi.updateNote(saveCaseId, content);
+      if (activeCaseIdRef.current === saveCaseId) {
+        setNote(saved);
+      }
     } catch (err) {
       console.error('Failed to save note:', err);
       throw err;
     } finally {
-      setSaving(false);
+      if (activeCaseIdRef.current === saveCaseId) {
+        setSaving(false);
+      }
     }
   };
 

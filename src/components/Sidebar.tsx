@@ -1,39 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Case } from '../types';
 
 interface SidebarProps {
   cases: Case[];
   loading: boolean;
   selectedCaseId: string | null;
-  /** True when the global meta source manager is showing instead of a container. */
-  metaSourcesActive: boolean;
+  /** True when the entities panel is showing instead of a container. */
+  entitiesActive: boolean;
   onSelectCase: (caseId: string) => void;
-  onOpenMetaSources: () => void;
+  onOpenEntities: () => void;
   onCreateCase: () => void;
-  onCreateEvent: () => void;
-  onDeleteCase: (caseId: string) => void;
+  /** Deletes the case. The Sidebar handles user confirmation before calling this. */
+  onDeleteCase: (caseId: string) => Promise<void>;
 }
 
 export function Sidebar({
   cases,
   loading,
   selectedCaseId,
-  metaSourcesActive,
+  entitiesActive,
   onSelectCase,
-  onOpenMetaSources,
+  onOpenEntities,
   onCreateCase,
-  onCreateEvent,
   onDeleteCase,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  /** The case pending deletion confirmation, plus its title for the prompt. */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   const filteredCases = cases.filter(c =>
     c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const plainCases = filteredCases.filter(c => c.kind === 'case');
-  const events = filteredCases.filter(c => c.kind === 'event');
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    setPendingDelete(null);
+    await onDeleteCase(pendingDelete.id);
+  };
+
+  const handleCancelDelete = () => {
+    setPendingDelete(null);
+  };
 
   return (
     <aside className="w-64 border-r border-zinc-800 bg-zinc-900/50 flex flex-col h-full">
@@ -51,7 +59,7 @@ export function Sidebar({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search cases and events..."
+            placeholder="Search cases..."
             className="input pl-10"
           />
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -74,63 +82,41 @@ export function Sidebar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <p className="text-sm">Nothing found</p>
-            <p className="text-xs mt-1">Create a case or event to get started</p>
+            <p className="text-xs mt-1">Create a case to get started</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {events.length > 0 && (
-              <section>
-                <h2 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Events ({events.length})
-                </h2>
-                <ul className="space-y-1">
-                  {events.map(caseItem => (
-                    <li key={caseItem.id}>
-                      <CaseListItem
-                        caseItem={caseItem}
-                        isSelected={selectedCaseId === caseItem.id}
-                        onSelect={() => onSelectCase(caseItem.id)}
-                        onDelete={() => onDeleteCase(caseItem.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {plainCases.length > 0 && (
-              <section>
-                <h2 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Cases ({plainCases.length})
-                </h2>
-                <ul className="space-y-1">
-                  {plainCases.map(caseItem => (
-                    <li key={caseItem.id}>
-                      <CaseListItem
-                        caseItem={caseItem}
-                        isSelected={selectedCaseId === caseItem.id}
-                        onSelect={() => onSelectCase(caseItem.id)}
-                        onDelete={() => onDeleteCase(caseItem.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
+            <section>
+              <h2 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                Cases ({filteredCases.length})
+              </h2>
+              <ul className="space-y-1">
+                {filteredCases.map(caseItem => (
+                  <li key={caseItem.id}>
+                    <CaseListItem
+                      caseItem={caseItem}
+                      isSelected={selectedCaseId === caseItem.id}
+                      onSelect={() => onSelectCase(caseItem.id)}
+                      onDelete={() => setPendingDelete({ id: caseItem.id, title: caseItem.title })}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
         )}
       </div>
 
       <div className="p-4 border-t border-zinc-800 space-y-2">
         <button
-          onClick={onOpenMetaSources}
-          className={`w-full justify-start ${metaSourcesActive ? 'btn-primary' : 'btn-secondary'}`}
-          title="Manage the global list of people and organisations sources can reference"
+          onClick={onOpenEntities}
+          className={`w-full justify-start ${entitiesActive ? 'btn-primary' : 'btn-secondary'}`}
+          title="Manage entities — typed objects with qualities and source provenance"
         >
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
           </svg>
-          Meta Sources
+          Entities
         </button>
         <button onClick={onCreateCase} className="btn-primary w-full">
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,13 +124,36 @@ export function Sidebar({
           </svg>
           New Case
         </button>
-        <button onClick={onCreateEvent} className="btn-secondary w-full">
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          New Event
-        </button>
       </div>
+
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md mx-4 card p-6">
+            <h2 className="text-lg font-semibold mb-1">
+              Delete Case?
+            </h2>
+            <p className="text-sm text-zinc-300 mb-4">
+              Are you sure you want to delete "{pendingDelete.title}"? This will also delete all associated sources and notes.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="btn-ghost text-red-400 hover:bg-red-600/20"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -158,7 +167,8 @@ interface CaseListItemProps {
 
 function CaseListItem({ caseItem, isSelected, onSelect, onDelete }: CaseListItemProps) {
   const [hovered, setHovered] = useState(false);
-  const isEvent = caseItem.kind === 'event';
+  // Keeps the "Updated …" line honest as time passes.
+  useRelativeTimeTick();
 
   return (
     <div
@@ -175,16 +185,11 @@ function CaseListItem({ caseItem, isSelected, onSelect, onDelete }: CaseListItem
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              {isEvent && (
-                <svg className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-amber-400' : 'text-zinc-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              )}
               <h3 className={`font-medium truncate ${isSelected ? 'text-amber-300' : 'text-zinc-100'}`}>
                 {caseItem.title}
               </h3>
             </div>
-            {isEvent && caseItem.event_date && (
+            {caseItem.event_date && (
               <p className={`text-xs mt-1 ${isSelected ? 'text-amber-400/80' : 'text-zinc-400'}`}>
                 {formatEventDate(caseItem.event_date, caseItem.event_time)}
               </p>
@@ -202,7 +207,7 @@ function CaseListItem({ caseItem, isSelected, onSelect, onDelete }: CaseListItem
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
               className="btn-ghost p-1.5 text-red-400 hover:bg-red-600/20 opacity-0 group-hover:opacity-100 transition-opacity"
-              title={isEvent ? 'Delete event' : 'Delete case'}
+              title="Delete case"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -230,6 +235,13 @@ export function formatEventDate(date: string, time: string | null): string {
   return time ? `${formatted} · ${time}` : formatted;
 }
 
+/**
+ * Renders a timestamp as a relative age, falling back to an absolute date.
+ *
+ * The relative text is only meaningful while it is fresh, so the caller
+ * re-renders on a timer (see `useRelativeTimeTick`). Without that, "just now"
+ * would stay on screen indefinitely.
+ */
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return '—';
@@ -244,4 +256,18 @@ function formatDate(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+/**
+ * Re-renders the caller once a minute so relative timestamps age.
+ *
+ * Returns nothing; the re-render is the whole effect.
+ */
+function useRelativeTimeTick(): void {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTick(tick => tick + 1), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 }

@@ -1,6 +1,6 @@
 {
   "name": "osint-case-manager",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "OSINT Case & Source Manager - Local-first intelligence case management",
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:build": "node scripts/fetch-yt-dlp.mjs && tauri build",
+    "fetch:yt-dlp": "node scripts/fetch-yt-dlp.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:world-outline": "node scripts/build-world-outline.mjs"
@@ -45,10 +46,14 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "6.1.2",
     "autoprefixer": "10.6.2",
+    "jsdom": "^31.0.0",
     "postcss": "8.5.32",
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",

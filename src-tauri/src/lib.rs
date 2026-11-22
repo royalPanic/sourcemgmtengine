@@ -1,10 +1,13 @@
 mod commands;
 mod database;
 mod models;
+mod opentimestamps;
 mod validation;
 
-#[cfg(test)]
-mod scope_tests;
+// Entity type templates embedded at compile time by build.rs.
+mod entity_types {
+    include!(concat!(env!("OUT_DIR"), "/entity_types.rs"));
+}
 
 #[cfg(test)]
 mod patch_tests;
@@ -24,7 +27,16 @@ mod reference_tests;
 #[cfg(test)]
 mod migration_tests;
 
-use commands::{cases, files, meta_sources, sources};
+#[cfg(test)]
+mod entity_scope_tests;
+
+#[cfg(test)]
+mod entity_type_tests;
+
+#[cfg(test)]
+mod download_tests;
+
+use commands::{cases, entities, files, sources};
 use database::connection::init_sql_plugin;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -49,13 +61,27 @@ pub fn run() {
             sources::delete_source,
             sources::add_source_attachment,
             sources::delete_source_attachment,
-            meta_sources::create_meta_source,
-            meta_sources::get_meta_sources,
-            meta_sources::update_meta_source,
-            meta_sources::delete_meta_source,
-            files::save_attachment,
+            entities::get_entity_types,
+            entities::create_entity_type,
+            entities::update_entity_type,
+            entities::delete_entity_type,
+            entities::create_entity,
+            entities::get_entities,
+            entities::get_entity,
+            entities::update_entity,
+            entities::delete_entity,
+            entities::create_entity_quality,
+            entities::get_entity_qualities,
+            entities::update_entity_quality,
+            entities::delete_entity_quality,
+            entities::add_quality_source_ref,
+            entities::remove_quality_source_ref,
+            entities::get_quality_source_refs,
             files::import_attachment,
-            files::read_attachment,
+            files::download_media,
+            files::timestamp_attachment,
+            files::verify_timestamp,
+            files::get_timestamp_status,
             files::delete_attachment_file,
             files::open_attachment,
             files::get_attachment_path,

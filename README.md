@@ -8,17 +8,22 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 
 ## Features
 
-- **Case management** — create and delete cases and events. Deleting a container removes its notes, sources, and attachment records.
+- **Case management** — create and delete cases. Every case can optionally carry a date and wall-clock time, so a case can double as a dated event. Deleting a container removes its notes, sources, qualities, and attachment records.
 - **Rich case notes** — a TipTap editor with headings, lists, task lists, tables, links, highlights, and text alignment. Notes auto-save with an 800 ms debounce.
-- **Dated events** — events are containers with an optional date and wall-clock time, both editable from the banner. Sources attached to an event can record a stance (supports / refutes / neutral).
-- **Event dashboard** — per-stance Admiralty averages, a stance distribution, a map of geolocated sources, and a breakdown table.
+- **Dated cases** — any case can have an optional date and wall-clock time, both editable from the banner. Sources attached to a case can record a stance (supports / refutes / neutral).
+- **Case dashboard** — per-stance Admiralty averages, a stance distribution, a map of geolocated sources, and a breakdown table.
 - **Geolocation** — a source can carry coordinates (decimal, DMS, UTM, or MGRS) and a place name, stored in `custom_metadata`.
 - **Structured source evaluation** — every source carries a type, URL, captured raw text, and a NATO Admiralty rating.
+- **Sortable source timeline** — click the **Date** or **Updated** column header to reorder the source grid, and click again to flip between newest-first and oldest-first. Sources with no date stay at the top in either direction, so an undated capture is never buried at the bottom of the list. The chosen sort is remembered locally between sessions.
 - **NATO Admiralty System** — Source Reliability (A–F) and Information Credibility (1–6), each with an inline definition drawn from NATO STANAG 2064 conventions.
 - **Evidence attachments** — attach files to a source, open them in the system default application, or delete them. Files are stored under a per-source folder using relative paths so the workspace stays portable.
+- **OpenTimestamps proofs** — every attachment can be cryptographically timestamped against the Bitcoin blockchain via public OpenTimestamps calendars, so its existence before a point in time is provable without trusting this application. Proofs are verified against real block headers, and an unverifiable proof never reports as confirmed.
 - **Expandable metadata** — arbitrary key/value pairs are stored as JSON in `sources.custom_metadata`, so specialised fields (TLP markings, coordinates, social handles) never require a schema migration.
-- **Meta sources** — reusable people and organisations (news agencies, officials, spokespeople) that persist across every case and event.
-- **Source references** — a source can cite another source in the same container, or a meta source. The citing source inherits its reference's Admiralty rating; citing another *source* also locks the stance to none and excludes it from dashboard statistics, so repeated reporting never counts as independent corroboration.
+- **Entities** — typed, reusable objects (people, organizations, vehicles, nations, governments, etc.) that persist across every case. Entities carry user-defined qualities, including a dedicated **Reliability** quality (A–F).
+- **Workspace tab** — a unified view combining sources, entities, and their relationships for the selected case, replacing separate tabs and panels.
+- **Entity type templates** — pre-seeded types (person, organization, government, nation, vehicle) plus user-defined types, each with default qualities that new entities of that type start with. Templates are editable from **Manage Entity Types**; the built-ins are seeded on first launch and can be customised but not deleted, and a type still used by an entity cannot be removed.
+- **Source references** — a source can cite another source in the same container, or an entity. The citing source inherits its reference's Admiralty rating; citing another *source* also locks the stance to none and excludes it from dashboard statistics, so repeated reporting never counts as independent corroboration.
+- **Entity reliability propagation** — when an entity has a Reliability quality (A–F), every source that references that entity inherits that reliability as its own `reliability_code`. Editing the entity's reliability pushes the new rating down to every citing source, live. The source's reliability field is greyed out when it references an entity — the entity wins. Credibility remains independent and is set on the source directly.
 - **Dark-mode-first UI** — a tactical zinc/amber palette built for multi-monitor analysis.
 
 ---
@@ -45,6 +50,36 @@ Everything lives on your machine. There is no account, no sync, and no third-par
 | Platform deps | See [Tauri prerequisites](https://tauri.app/start/prerequisites/) |
 
 On Windows you also need the **WebView2** runtime (preinstalled on Windows 11) and the MSVC build tools.
+
+### Media downloads (yt-dlp)
+
+"Download Media" preserves an image or video from a source's URL as an attachment.
+
+A **direct file link** — a URL ending in an image, video, audio, or `.pdf` extension — is fetched
+with a plain HTTP GET and needs no extra tooling. This covers the common case of an image URL
+copied straight out of a page.
+
+Any other URL is treated as a **web page**. yt-dlp is used for video sites, and if that does not
+produce a file the page's `og:image` / `twitter:image` is downloaded instead — so a link to an
+article or post captures its representative image. If yt-dlp is not installed at all, the image
+path still works.
+
+Release bundles ship yt-dlp as a **sidecar**: `npm run tauri:build` first runs
+`npm run fetch:yt-dlp`, which stages the binary at
+`src-tauri/binaries/yt-dlp-<target-triple>` so Tauri bundles it next to the app.
+
+For development (`npm run tauri:dev`) no sidecar is required — the app looks for a bundled
+sidecar first and then falls back to `yt-dlp` on your `PATH`:
+
+```bash
+pip install yt-dlp        # or: winget install yt-dlp
+```
+
+**ffmpeg is required** when a video site serves video and audio separately, because yt-dlp needs it
+to mux them into one playable file. It must likewise be on `PATH`.
+
+The staged sidecar is a downloaded third-party binary and is git-ignored, so run
+`npm run fetch:yt-dlp` once before your first release build.
 
 On Debian/Ubuntu:
 
@@ -123,10 +158,10 @@ them together:
 | `src-tauri/Cargo.toml` | `[package] version` | edit by hand |
 | `src-tauri/Cargo.lock` | `osint-case-manager` entry | `cargo update --workspace --offline` in `src-tauri/` |
 
-For example, to go to `2.1.0`:
+For example, to go to `3.0.0`:
 
 ```bash
-npm version 2.1.0 --no-git-tag-version
+npm version 3.0.0 --no-git-tag-version
 # edit src-tauri/tauri.conf.json and src-tauri/Cargo.toml
 cd src-tauri && cargo update --workspace --offline
 ```
@@ -137,8 +172,8 @@ bundled binaries report the wrong version.
 ### 2. Tag and push
 
 ```bash
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ### 3. Let CI build it
@@ -168,21 +203,25 @@ choose **More info → Run anyway**. To sign, add the certificate as repository 
 src/                        React frontend
   api/tauri.ts              Typed invoke() wrappers for every command
   components/               Sidebar, MainContent, CaseNotesEditor, SourcesGrid,
-                            DetailDrawer, Dashboard, SourceMap, MetaSourcesPanel,
-                            ReferenceSelect, MetaSourceModal
-  hooks/                    useCases, useCaseNote, useSources, useMetaSources,
-                            useDebounce
+                            DetailDrawer, Dashboard, SourceMap, WorkspaceTab,
+                            ReferenceSelect, EntityDetailDrawer, EntityQualityEditor,
+                            EntityTypeDesigner, EntityTypeSelector
+  hooks/                    useCases, useCaseNote, useSources, useEntities,
+                            useEntityQualities, useEntityTypes, useDebounce
   types/index.ts            Domain types + Admiralty definition tables
   utils/                    analytics, geo, coordinates, datetime (+ unit tests)
   styles/globals.css        Design tokens and component classes
 
 src-tauri/                  Rust backend
   src/lib.rs                Plugin registration and command handler
-  src/commands/             cases.rs, sources.rs, files.rs, meta_sources.rs,
+  src/commands/             cases.rs, sources.rs, files.rs, entities.rs,
                             references.rs
   src/database/             connection.rs, migrations.rs, pool.rs
   src/models/models.rs      Serde structs
-  capabilities/default.json Tauri v2 permission set
+  capabilities/default.json Tauri v2 permissions
+  entity-types/             Built-in entity type JSON templates, seeded on first launch
+    person.json, organization.json, government.json, nation.json, vehicle.json
+```ission set
   tauri.conf.json           App config
 ```
 
@@ -205,42 +244,95 @@ Attachments are written to `attachments/<source_id>/` inside the same directory.
 cases              (id, title, description, created_at, updated_at,
                     kind, event_date, event_time)
 case_notes         (id, case_id UNIQUE, content, updated_at)
-meta_sources       (id, name, kind, description, url,
-                    reliability_code, credibility_code, created_at, updated_at)
+entities           (id, entity_type, name, description, case_id, is_global,
+                    created_at, updated_at)
+entity_qualities   (id, entity_id, quality_name, quality_type,
+                    value_string, value_integer, value_boolean,
+                    value_date, value_coordinates, value_address,
+                    created_at, updated_at)
+quality_source_refs(id, quality_id, source_id, reliability_code,
+                    credibility_code, created_at)
 sources            (id, case_id, title, source_type, url, raw_text,
                     reliability_code, credibility_code, stance,
-                    reference_source_id, reference_meta_source_id,
+                    reference_source_id, reference_entity_id,
                     source_date, source_time, custom_metadata,
                     created_at, updated_at)
 source_attachments (id, source_id, file_name, relative_path,
                     mime_type, file_size, created_at)
+source_timestamp   (id, source_attachment_id UNIQUE, ots_path, status,
+                    created_at, confirmed_at)
 ```
 
 Migrations are versioned through `tauri-plugin-sql` and tracked in `_sqlx_migrations`. Foreign keys declare `ON DELETE CASCADE`, and the delete commands also remove children explicitly so behaviour does not depend on the connection-level `PRAGMA foreign_keys` setting.
 
-Reference columns instead use `ON DELETE SET NULL`: deleting a source or meta source blanks the citation link but leaves the citing source — and the rating it inherited — intact.
+Reference columns instead use `ON DELETE SET NULL`: deleting a source or entity blanks the citation link but leaves the citing source — and the rating it inherited — intact.
 
 ---
 
-## Meta sources and source references
+## OpenTimestamps proofs
 
-A **meta source** is a reusable entity — a news agency, an official, a spokesperson — stored once at workspace level and citable from any case or event. Each carries its own Admiralty rating, which is what makes the feature work.
+Every attachment can carry an **OpenTimestamps** proof proving the file existed before a point in time,
+without trusting this application or any third party. Proofs are written next to the attachment as
+`<file>.<ext>.ots` and recorded in `source_timestamp`.
+
+The client is implemented directly in Rust (`src-tauri/src/opentimestamps/`), so the Python `ots` tool is
+not required. The proof container and wire format are consensus-critical and follow
+[`python-opentimestamps`](https://github.com/opentimestamps/python-opentimestamps) exactly; the tests pin
+byte-for-byte against proofs and calendar responses produced by the reference implementation.
+
+**Stamping** hashes the file with SHA-256 and submits the digest to the public OpenTimestamps calendars
+(`POST <calendar>/digest`, raw 32-byte body). Each calendar returns a serialized commitment subtree, which is
+merged into one proof. A freshly stamped proof is `pending`: the calendar holds the commitment but its
+aggregation transaction is not mined yet.
+
+**Verification** asks the calendars named in the proof's pending attestations for an upgrade. Once a
+`BitcoinBlockHeaderAttestation` is available, the attested commitment is checked against the real block header
+fetched from a public block explorer, and the block time is recorded. Only a proof that passes that check
+becomes `confirmed`; anything else stays `pending`, because "the calendar returned HTTP 200" is not proof.
+
+At least one calendar must accept the commitment. A stamping failure is reported to the operator rather than
+silently swallowed.
+
+Downloads are stamped automatically, and a failed automatic stamp never loses the attachment. A proof that
+cannot be parsed — for example one written by an earlier build — is detected and can be replaced by
+re-stamping, so existing evidence is not stranded.
+
+---
+
+## Entities and source references
+
+An **entity** is a typed, reusable object — a person, organization, vehicle, nation, government, etc. — stored once and citable from any case. Entities carry user-defined qualities, including a dedicated **Reliability** quality (A–F).
+
+A quality's **source provenance is optional**. A quality may cite one or more sources to show where it came from, and the cited sources' Admiralty ratings are averaged for display. Leaving it empty is valid and expected when work happens out of order — for example, recording a reliability assessment before the supporting capture exists. Provenance can be added later from the quality editor.
 
 A source may **reference** exactly one of:
 
 | Target | Rating | Stance | Analytics |
 | :--- | :--- | :--- | :--- |
 | Another source in the same container | Inherited | **Locked to none** | **Excluded** |
-| A meta source | Inherited | Editable | **Counted** |
+| An entity | Inherited from entity's Reliability quality | Editable | **Counted** |
 
-The two rows differ because they mean different things. Citing a sibling source duplicates one piece of evidence, so it must not add a second corroboration. Citing a meta source is a new capture of that entity's output — a wire service publishing many articles — so each capture is independent evidence and stays measurable.
+The two rows differ because they mean different things. Citing a sibling source duplicates one piece of evidence, so it must not add a second corroboration. Citing an entity is a new capture of that entity's output — a wire service publishing many articles — so each capture is independent evidence and stays measurable.
 
 Two rules follow from the intent of the feature and are enforced in the backend, not just the UI:
 
-1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the reference — or a meta source — pushes the new rating down every citation, including citations of citations.
-2. **A source that cites another source carries no stance.** Ten outlets repeating one core capture must not read as ten independent corroborations, so the stance is forced to none, the control is disabled, and the source is excluded from every event dashboard statistic.
+1. **The rating is inherited, and stays in sync.** A report of a statement does not change the reliability of the source or the credibility of the information, so a citing source mirrors its reference. Editing the entity's Reliability quality pushes the new rating down every citation, including citations of citations. A *source* reference supplies both codes; an *entity* reference supplies reliability only, so the citing source keeps its own credibility.
+2. **A source that cites another source carries no stance.** Ten outlets repeating one core capture must not read as ten independent corroborations, so the stance is forced to none, the control is disabled, and the source is excluded from every case dashboard statistic.
 
 Cycles (`A → B → A`) and cross-container references are rejected. The "at most one reference" rule is additionally enforced by SQLite triggers so it holds for any future writer.
+
+---
+
+## Entity reliability propagation
+
+Entities can have a **Reliability** quality (type `reliability`, value `A`–`F`). When a source references that entity:
+
+- The source's `reliability_code` is set to the entity's Reliability quality value
+- The source's reliability field is greyed out in the UI — the entity wins
+- Editing the entity's Reliability quality propagates the new rating to every citing source, live
+- If the source's entity reference is cleared, the source can set its own reliability again
+
+Credibility is **not** propagated — it remains independent and is set on the source directly.
 
 ---
 

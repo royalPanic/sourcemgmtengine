@@ -1,5 +1,6 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, ContainerKind, Stance, MetaSource, MetaSourceKind, MetaSourceSummary } from '../types';
+import type { Case, CaseNote, Source, SourceWithAttachments, SourceType, SourceCustomMetadata, SourceAttachment, ImportedAttachment, TimestampRecord, Stance } from '../types';
+import type { Entity, EntityQuality, EntityQualityWithRefs, EntityType, EntityTypeQuality, QualitySourceRef, QualityType, ReliabilityCode, CredibilityCode } from '../types';
 
 // Tauri v2 maps Rust snake_case command parameters to camelCase on the JS side,
 // so every argument below must be camelCase.
@@ -7,13 +8,11 @@ export const casesApi = {
   create: (params: {
     title: string;
     description?: string;
-    kind?: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => invoke<Case>('create_case', {
     title: params.title,
     description: params.description,
-    kind: params.kind,
     eventDate: params.eventDate,
     eventTime: params.eventTime,
   }),
@@ -59,7 +58,7 @@ export const sourcesApi = {
     credibilityCode?: number;
     stance?: Stance;
     referenceSourceId?: string;
-    referenceMetaSourceId?: string;
+    referenceEntityId?: string;
     sourceDate?: string;
     sourceTime?: string;
     customMetadata?: SourceCustomMetadata;
@@ -73,7 +72,7 @@ export const sourcesApi = {
     credibilityCode: params.credibilityCode,
     stance: params.stance,
     referenceSourceId: params.referenceSourceId,
-    referenceMetaSourceId: params.referenceMetaSourceId,
+    referenceEntityId: params.referenceEntityId,
     sourceDate: params.sourceDate,
     sourceTime: params.sourceTime,
     customMetadata: params.customMetadata ?? {},
@@ -94,7 +93,7 @@ export const sourcesApi = {
     credibilityCode: number;
     stance: Stance;
     referenceSourceId: string;
-    referenceMetaSourceId: string;
+    referenceEntityId: string;
     sourceDate: string;
     sourceTime: string;
     customMetadata: SourceCustomMetadata;
@@ -109,7 +108,7 @@ export const sourcesApi = {
     stance: params.stance,
     // An empty string clears the reference; omitting the key leaves it alone.
     referenceSourceId: params.referenceSourceId,
-    referenceMetaSourceId: params.referenceMetaSourceId,
+    referenceEntityId: params.referenceEntityId,
     // An empty string clears the stored value; omitting the key leaves it alone.
     sourceDate: params.sourceDate,
     sourceTime: params.sourceTime,
@@ -137,60 +136,154 @@ export const sourcesApi = {
     invoke<void>('delete_source_attachment', { id }),
 };
 
-export const metaSourcesApi = {
+export const entitiesApi = {
   getAll: () =>
-    invoke<MetaSourceSummary[]>('get_meta_sources'),
+    invoke<EntityType[]>('get_entity_types'),
 
-  create: (params: {
+  createType: (params: {
+    id: string;
     name: string;
-    kind?: MetaSourceKind;
     description?: string;
-    url?: string;
-    reliabilityCode?: string;
-    credibilityCode?: number;
-  }) => invoke<MetaSource>('create_meta_source', {
+    defaultQualities?: EntityTypeQuality[];
+  }) => invoke<EntityType>('create_entity_type', {
+    id: params.id,
     name: params.name,
-    kind: params.kind,
     description: params.description,
-    url: params.url,
-    reliabilityCode: params.reliabilityCode,
-    credibilityCode: params.credibilityCode,
+    defaultQualities: params.defaultQualities,
   }),
 
-  update: (id: string, params: Partial<{
+  updateType: (id: string, params: Partial<{
     name: string;
-    kind: MetaSourceKind;
     description: string;
-    url: string;
-    reliabilityCode: string;
-    credibilityCode: number;
-  }>) => invoke<MetaSource>('update_meta_source', {
+    defaultQualities: EntityTypeQuality[];
+  }>) => invoke<EntityType>('update_entity_type', {
     id,
     name: params.name,
-    kind: params.kind,
     description: params.description,
-    url: params.url,
-    reliabilityCode: params.reliabilityCode,
-    credibilityCode: params.credibilityCode,
+    defaultQualities: params.defaultQualities,
+  }),
+
+  deleteType: (id: string) =>
+    invoke<void>('delete_entity_type', { id }),
+
+  createEntity: (params: {
+    entityType: string;
+    name: string;
+    description?: string;
+    caseId?: string;
+    isGlobal: boolean;
+  }) => invoke<Entity>('create_entity', {
+    entityType: params.entityType,
+    name: params.name,
+    description: params.description,
+    caseId: params.caseId,
+    isGlobal: params.isGlobal,
+  }),
+
+  getEntities: (caseId?: string, isGlobal?: boolean) =>
+    invoke<Entity[]>('get_entities', { caseId, isGlobal }),
+
+  getEntity: (id: string) =>
+    invoke<Entity | null>('get_entity', { id }),
+
+  updateEntity: (id: string, params: Partial<{
+    name: string;
+    description: string;
+    caseId: string;
+    isGlobal: boolean;
+  }>) => invoke<Entity>('update_entity', {
+    id,
+    name: params.name,
+    description: params.description,
+    caseId: params.caseId,
+    isGlobal: params.isGlobal,
+  }),
+
+  deleteEntity: (id: string) =>
+    invoke<void>('delete_entity', { id }),
+};
+
+export const qualitiesApi = {
+  create: (params: {
+    entityId: string;
+    qualityName: string;
+    qualityType: QualityType;
+    valueString?: string;
+    valueInteger?: number;
+    valueBoolean?: boolean;
+    valueDate?: string;
+    valueCoordinates?: string;
+    valueAddress?: string;
+  }) => invoke<EntityQuality>('create_entity_quality', {
+    entityId: params.entityId,
+    qualityName: params.qualityName,
+    qualityType: params.qualityType,
+    valueString: params.valueString,
+    valueInteger: params.valueInteger,
+    valueBoolean: params.valueBoolean,
+    valueDate: params.valueDate,
+    valueCoordinates: params.valueCoordinates,
+    valueAddress: params.valueAddress,
+  }),
+
+  getAll: (entityId: string) =>
+    invoke<EntityQualityWithRefs[]>('get_entity_qualities', { entityId }),
+
+  update: (id: string, params: Partial<{
+    qualityName: string;
+    qualityType: QualityType;
+    valueString: string | null;
+    valueInteger: number | null;
+    valueBoolean: boolean | null;
+    valueDate: string | null;
+    valueCoordinates: string | null;
+    valueAddress: string | null;
+  }>) => invoke<EntityQualityWithRefs>('update_entity_quality', {
+    id,
+    qualityName: params.qualityName,
+    qualityType: params.qualityType,
+    valueString: params.valueString,
+    valueInteger: params.valueInteger,
+    valueBoolean: params.valueBoolean,
+    valueDate: params.valueDate,
+    valueCoordinates: params.valueCoordinates,
+    valueAddress: params.valueAddress,
   }),
 
   delete: (id: string) =>
-    invoke<void>('delete_meta_source', { id }),
+    invoke<void>('delete_entity_quality', { id }),
+};
+
+export const qualitySourceRefsApi = {
+  add: (params: {
+    qualityId: string;
+    sourceId: string;
+    reliabilityCode?: ReliabilityCode;
+    credibilityCode?: CredibilityCode;
+  }) => invoke<QualitySourceRef>('add_quality_source_ref', {
+    qualityId: params.qualityId,
+    sourceId: params.sourceId,
+    reliabilityCode: params.reliabilityCode,
+    credibilityCode: params.credibilityCode,
+  }),
+
+  remove: (id: string) =>
+    invoke<void>('remove_quality_source_ref', { id }),
+
+  getAll: (qualityId: string) =>
+    invoke<QualitySourceRef[]>('get_quality_source_refs', { qualityId }),
 };
 
 export const filesApi = {
-  saveAttachment: (sourceId: string, fileName: string, data: Uint8Array) => 
-    invoke<string>('save_attachment', { sourceId, fileName, data: Array.from(data) }),
-
   /** Copies a file from an absolute on-disk path into the attachment store. */
   importAttachment: (sourceId: string, sourcePath: string) =>
     invoke<ImportedAttachment>('import_attachment', { sourceId, sourcePath }),
-  
-  readAttachment: (relativePath: string) => 
-    invoke<number[]>('read_attachment', { relativePath }).then(arr => new Uint8Array(arr)),
-  
-  deleteAttachmentFile: (relativePath: string) => 
+
+  deleteAttachmentFile: (relativePath: string) =>
     invoke<void>('delete_attachment_file', { relativePath }),
+  
+  downloadMedia: (sourceId: string, url: string) => 
+    invoke<SourceAttachment>('download_media', { sourceId, url }),
   
   openAttachment: (relativePath: string) => 
     invoke<void>('open_attachment', { relativePath }),
@@ -206,4 +299,15 @@ export const filesApi = {
     const absolute = await invoke<string>('get_attachment_path', { relativePath });
     return convertFileSrc(absolute);
   },
+};
+
+export const timestampApi = {
+  timestampAttachment: (attachmentId: string) =>
+    invoke<TimestampRecord>('timestamp_attachment', { attachmentId }),
+
+  verifyTimestamp: (attachmentId: string) =>
+    invoke<TimestampRecord>('verify_timestamp', { attachmentId }),
+
+  getTimestampStatus: (attachmentId: string) =>
+    invoke<TimestampRecord | null>('get_timestamp_status', { attachmentId }),
 };

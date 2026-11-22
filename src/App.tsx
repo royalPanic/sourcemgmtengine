@@ -1,27 +1,41 @@
 import { useState } from 'react';
+import { qualitiesApi, qualitySourceRefsApi } from './api/tauri';
 import { Sidebar } from './components/Sidebar';
 import { MainContent } from './components/MainContent';
 import { DetailDrawer } from './components/DetailDrawer';
 import { NewContainerModal } from './components/NewContainerModal';
-import { MetaSourcesPanel } from './components/MetaSourcesPanel';
+import { EntitiesPanel } from './components/EntitiesPanel';
+import { EntityDetailDrawer } from './components/EntityDetailDrawer';
+import { LoadErrorBanner } from './components/LoadErrorBanner';
 import { useCases } from './hooks/useCases';
 import { useSources } from './hooks/useSources';
-import { useMetaSources } from './hooks/useMetaSources';
-import type { SourceWithAttachments, ContainerKind } from './types';
+import { useEntities } from './hooks/useEntities';
+import { useEntityTypes } from './hooks/useEntityTypes';
+import { useEntityQualities } from './hooks/useEntities';
+import type { SourceWithAttachments, Entity, EntityTypeQuality } from './types';
 
 function App() {
-  const { cases, loading, createCase, updateCase, deleteCase } = useCases();
+  const {
+    cases,
+    loading,
+    error: casesError,
+    createCase,
+    updateCase,
+    deleteCase,
+  } = useCases();
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSource, setDrawerSource] = useState<SourceWithAttachments | null>(null);
-  const [newContainerKind, setNewContainerKind] = useState<ContainerKind | null>(null);
-  // The meta source manager replaces the container view rather than opening a
-  // modal, because it is a workspace-level list with its own table.
-  const [showMetaSources, setShowMetaSources] = useState(false);
+  // The entities panel replaces the container view.
+  const [showEntities, setShowEntities] = useState(false);
+  const [showNewContainer, setShowNewContainer] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
 
   const {
     sources,
     loading: sourcesLoading,
+    error: sourcesError,
+    reloadQuietly: reloadSourcesQuietly,
     createSource,
     updateSource,
     deleteSource,
@@ -29,24 +43,54 @@ function App() {
     deleteAttachment,
     openAttachment,
     getAttachmentUrl,
-    reloadQuietly: reloadSources,
+    downloadMedia,
+    timestampAttachment,
+    verifyTimestamp,
+    getTimestampStatus,
   } = useSources(selectedCaseId);
 
+  // One list serves every view (workspace tabs, source reference picker, and
+  // the Entities panel), so it is always fetched with the container scope and
+  // no `is_global` filter. That returns the global entities *plus* this
+  // container's own entities, which is what all three consumers want. Forcing
+  // `is_global` here would hide case-specific entities from every view except
+  // the panel.
   const {
-    metaSources,
-    loading: metaSourcesLoading,
-    createMetaSource,
-    updateMetaSource,
-    deleteMetaSource,
-  } = useMetaSources();
+    entities,
+    loading: entitiesLoading,
+    error: entitiesError,
+    createEntity,
+    updateEntity,
+    deleteEntity,
+  } = useEntities(selectedCaseId);
+
+  const { qualities: entityQualities, error: qualitiesError, loadQualities: reloadQualities } = useEntityQualities(selectedEntity?.id ?? null);
+
+  const {
+    types: entityTypes,
+    loading: entityTypesLoading,
+    error: entityTypesError,
+    createType: createEntityType,
+    updateType: updateEntityType,
+    deleteType: deleteEntityType,
+  } = useEntityTypes();
+
+  // A failed read leaves the affected view empty, which is indistinguishable
+  // from "nothing here yet" without saying so. The first failure wins: it is
+  // the one that caused the visible gap.
+  const loadError =
+    [casesError, sourcesError, entitiesError, entityTypesError, qualitiesError].find(
+      (message): message is string => Boolean(message)
+    ) ?? null;
 
   const selectedCase = cases.find(c => c.id === selectedCaseId) ?? null;
 
   const handleSelectCase = (caseId: string) => {
     setSelectedCaseId(caseId);
-    setShowMetaSources(false);
+    setShowEntities(false);
     setDrawerOpen(false);
     setDrawerSource(null);
+    setSelectedEntity(null);
   };
 
   const handleOpenSourceDetail = (source: SourceWithAttachments) => {
@@ -54,39 +98,153 @@ function App() {
     setDrawerOpen(true);
   };
 
+  const handleOpenEntityDetail = (entity: Entity) => {
+    setSelectedEntity(entity);
+  };
+
   const handleCreateContainer = async (params: {
     title: string;
     description?: string;
-    kind: ContainerKind;
     eventDate?: string;
     eventTime?: string;
   }) => {
     const created = await createCase(params);
     setSelectedCaseId(created.id);
-    setShowMetaSources(false);
-    setNewContainerKind(null);
+    setShowEntities(false);
+    setShowNewContainer(false);
   };
 
   const handleDeleteCase = async (caseId: string) => {
-    if (window.confirm('Are you sure you want to delete this container? This will also delete all associated sources and notes.')) {
-      await deleteCase(caseId);
-      if (selectedCaseId === caseId) {
-        setSelectedCaseId(null);
-      }
+    await deleteCase(caseId);
+    if (selectedCaseId === caseId) {
+      setSelectedCaseId(null);
     }
   };
 
-  // Editing a meta source re-rates every source that cites it, so the open
-  // container needs refreshing too.
-  const handleUpdateMetaSource: typeof updateMetaSource = async (id, params) => {
-    const result = await updateMetaSource(id, params);
-    await reloadSources();
-    return result;
+  const handleCreateEntity = async (params: {
+    entityType: string;
+    name: string;
+    description?: string;
+    caseId?: string;
+    isGlobal: boolean;
+  }): Promise<void> => {
+    await createEntity(params);
+    // Stay where the operator was. Switching views on create hid the new
+    // case-specific entity immediately after it was added.
   };
 
-  const handleDeleteMetaSource = async (id: string) => {
-    await deleteMetaSource(id);
-    await reloadSources();
+  const handleUpdateEntity = async (id: string, params: Partial<{
+    name: string;
+    description: string;
+    caseId: string;
+    isGlobal: boolean;
+  }>) => {
+    const updated = await updateEntity(id, params);
+    setSelectedEntity(updated);
+  };
+
+  const handleDeleteEntity = async (id: string) => {
+    await deleteEntity(id);
+    if (selectedEntity?.id === id) {
+      setSelectedEntity(null);
+    }
+  };
+
+  const handleCreateEntityType = async (params: {
+    id: string;
+    name: string;
+    description?: string;
+    defaultQualities: EntityTypeQuality[];
+  }) => {
+    await createEntityType(params);
+  };
+
+  const handleUpdateEntityType = async (id: string, params: Partial<{
+    name: string;
+    description: string;
+    defaultQualities: EntityTypeQuality[];
+  }>) => {
+    await updateEntityType(id, params);
+  };
+
+  const handleDeleteEntityType = async (id: string) => {
+    await deleteEntityType(id);
+  };
+
+  const handleCreateQuality = async (params: {
+    entityId: string;
+    qualityName: string;
+    qualityType: string;
+    valueString?: string | null;
+    valueInteger?: number | null;
+    valueBoolean?: boolean | null;
+    valueDate?: string | null;
+    valueCoordinates?: string | null;
+    valueAddress?: string | null;
+  }) => {
+    await qualitiesApi.create({
+      entityId: params.entityId,
+      qualityName: params.qualityName,
+      qualityType: params.qualityType as import('./types').QualityType,
+      valueString: params.valueString ?? undefined,
+      valueInteger: params.valueInteger ?? undefined,
+      valueBoolean: params.valueBoolean ?? undefined,
+      valueDate: params.valueDate ?? undefined,
+      valueCoordinates: params.valueCoordinates ?? undefined,
+      valueAddress: params.valueAddress ?? undefined,
+    });
+    await reloadQualities();
+    await reloadSourcesQuietly();
+  };
+
+  const handleUpdateQuality = async (id: string, params: Partial<{
+    qualityName: string;
+    qualityType: string;
+    valueString: string | null;
+    valueInteger: number | null;
+    valueBoolean: boolean | null;
+    valueDate: string | null;
+    valueCoordinates: string | null;
+    valueAddress: string | null;
+  }>) => {
+    await qualitiesApi.update(id, {
+      qualityName: params.qualityName ?? undefined,
+      qualityType: params.qualityType as import('./types').QualityType | undefined,
+      valueString: params.valueString,
+      valueInteger: params.valueInteger,
+      valueBoolean: params.valueBoolean,
+      valueDate: params.valueDate,
+      valueCoordinates: params.valueCoordinates,
+      valueAddress: params.valueAddress,
+    });
+    await reloadQualities();
+    await reloadSourcesQuietly();
+  };
+
+  const handleDeleteQuality = async (id: string) => {
+    await qualitiesApi.delete(id);
+    await reloadQualities();
+    await reloadSourcesQuietly();
+  };
+
+  const handleAddQualitySourceRef = async (params: {
+    qualityId: string;
+    sourceId: string;
+    reliabilityCode?: string;
+    credibilityCode?: number;
+  }) => {
+    await qualitySourceRefsApi.add({
+      qualityId: params.qualityId,
+      sourceId: params.sourceId,
+      reliabilityCode: params.reliabilityCode as import('./types').ReliabilityCode | undefined,
+      credibilityCode: params.credibilityCode as import('./types').CredibilityCode | undefined,
+    });
+    await reloadQualities();
+  };
+
+  const handleRemoveQualitySourceRef = async (refId: string) => {
+    await qualitySourceRefsApi.remove(refId);
+    await reloadQualities();
   };
 
   // Keep the open drawer in sync with the latest source state.
@@ -99,46 +257,62 @@ function App() {
     ? sources.filter(s => s.id !== activeDrawerSource.id)
     : [];
 
+  const view = showEntities ? 'entities' : 'content';
+
   return (
     <div className="h-screen w-full flex bg-zinc-950">
       <Sidebar
         cases={cases}
         loading={loading}
         selectedCaseId={selectedCaseId}
-        metaSourcesActive={showMetaSources}
+        entitiesActive={showEntities}
         onSelectCase={handleSelectCase}
-        onOpenMetaSources={() => {
-          setShowMetaSources(true);
+        onOpenEntities={() => {
+          setShowEntities(true);
           setDrawerOpen(false);
           setDrawerSource(null);
+          setSelectedEntity(null);
         }}
-        onCreateCase={() => setNewContainerKind('case')}
-        onCreateEvent={() => setNewContainerKind('event')}
+        onCreateCase={() => setShowNewContainer(true)}
         onDeleteCase={handleDeleteCase}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
-        {showMetaSources ? (
-          <MetaSourcesPanel
-            metaSources={metaSources}
-            loading={metaSourcesLoading}
-            onCreate={createMetaSource}
-            onUpdate={handleUpdateMetaSource}
-            onDelete={handleDeleteMetaSource}
+        <LoadErrorBanner message={loadError} />
+        {view === 'entities' ? (
+          <EntitiesPanel
+            selectedCaseId={selectedCaseId}
+            cases={cases}
+            entities={entities}
+            entityTypes={entityTypes}
+            loading={entitiesLoading || entityTypesLoading}
+            onCreateEntity={handleCreateEntity}
+            onDeleteEntity={handleDeleteEntity}
+            onOpenEntityDetail={handleOpenEntityDetail}
+            selectedEntityId={selectedEntity?.id ?? null}
+            onCreateType={handleCreateEntityType}
+            onUpdateType={handleUpdateEntityType}
+            onDeleteType={handleDeleteEntityType}
           />
         ) : (
           <MainContent
             container={selectedCase}
+            cases={cases}
             sources={sources}
             sourcesLoading={sourcesLoading}
-            metaSources={metaSources}
+            entities={entities}
+            entitiesLoading={entitiesLoading || entityTypesLoading}
+            entityTypes={entityTypes}
             onUpdateContainer={updateCase}
             onCreateSource={createSource}
-            onUpdateSource={updateSource}
             onDeleteSource={deleteSource}
-            onImportAttachment={importAttachment}
-            onDeleteAttachment={deleteAttachment}
-            onOpenAttachment={openAttachment}
             onOpenSourceDetail={handleOpenSourceDetail}
+            onCreateEntity={handleCreateEntity}
+            onDeleteEntity={handleDeleteEntity}
+            onOpenEntityDetail={handleOpenEntityDetail}
+            selectedEntityId={selectedEntity?.id ?? null}
+            onCreateType={handleCreateEntityType}
+            onUpdateType={handleUpdateEntityType}
+            onDeleteType={handleDeleteEntityType}
           />
         )}
       </div>
@@ -146,19 +320,36 @@ function App() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         source={activeDrawerSource}
-        isEvent={selectedCase?.kind === 'event'}
         siblings={drawerSiblings}
-        metaSources={metaSources}
+        entities={entities}
         onUpdate={updateSource}
         onImportAttachment={importAttachment}
         onDeleteAttachment={deleteAttachment}
         onOpenAttachment={openAttachment}
         resolveAttachmentUrl={getAttachmentUrl}
+        downloadMedia={downloadMedia}
+        timestampAttachment={timestampAttachment}
+        verifyTimestamp={verifyTimestamp}
+        getTimestampStatus={getTimestampStatus}
       />
-      {newContainerKind && (
+      <EntityDetailDrawer
+        isOpen={selectedEntity !== null}
+        onClose={() => setSelectedEntity(null)}
+        entity={selectedEntity}
+        qualities={entityQualities}
+        sources={sources.map(s => ({ id: s.id, title: s.title }))}
+        cases={cases}
+        onUpdateEntity={handleUpdateEntity}
+        onDeleteEntity={handleDeleteEntity}
+        onCreateQuality={handleCreateQuality}
+        onUpdateQuality={handleUpdateQuality}
+        onDeleteQuality={handleDeleteQuality}
+        onAddQualitySourceRef={handleAddQualitySourceRef}
+        onRemoveQualitySourceRef={handleRemoveQualitySourceRef}
+      />
+      {showNewContainer && (
         <NewContainerModal
-          kind={newContainerKind}
-          onClose={() => setNewContainerKind(null)}
+          onClose={() => setShowNewContainer(false)}
           onSubmit={handleCreateContainer}
         />
       )}

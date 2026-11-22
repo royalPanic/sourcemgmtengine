@@ -1,5 +1,3 @@
-export type ContainerKind = 'case' | 'event';
-
 /** How a source bears on the event it belongs to. `null` = none / not applicable. */
 export type Stance = 'supports' | 'refutes' | 'neutral';
 
@@ -7,8 +5,7 @@ export interface Case {
   id: string;
   title: string;
   description: string | null;
-  kind: ContainerKind;
-  /** Calendar date, `YYYY-MM-DD`. Only set for events. */
+  /** Calendar date, `YYYY-MM-DD`. Optional for any case. */
   event_date: string | null;
   /** Wall-clock time, `HH:MM`. Optional even for events. */
   event_time: string | null;
@@ -23,7 +20,7 @@ export interface CaseNote {
   updated_at: string;
 }
 
-export type SourceType = 'URL' | 'Document' | 'Social Media' | 'Image' | 'Video' | 'Audio' | 'Other';
+export type SourceType = 'URL' | 'Document' | 'Social Media' | 'Image' | 'Video' | 'Audio' | 'Media' | 'Other';
 
 export type ReliabilityCode = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 export type CredibilityCode = 1 | 2 | 3 | 4 | 5 | 6;
@@ -33,35 +30,15 @@ export interface SourceCustomMetadata {
   [key: string]: string | number | boolean | null | undefined;
 }
 
-/** What a meta source represents. */
-export type MetaSourceKind = 'person' | 'organization' | 'other';
+// --- Entities ---
 
-/**
- * A global, reusable entity — a news agency, an official, a spokesperson.
- *
- * Meta sources exist outside any single case so the same entity is described
- * once and cited from anywhere. Their Admiralty rating is what a citing source
- * inherits.
- */
-export interface MetaSource {
-  id: string;
-  name: string;
-  kind: MetaSourceKind;
-  description: string | null;
-  url: string | null;
-  reliability_code: ReliabilityCode | null;
-  credibility_code: CredibilityCode | null;
-  created_at: string;
-  updated_at: string;
-}
+/** A quality data type. */
+export type QualityType = 'string' | 'boolean' | 'integer' | 'date' | 'coordinates' | 'address' | 'reliability';
 
-/** A meta source plus how many sources cite it. */
-export interface MetaSourceSummary extends MetaSource {
-  citation_count: number;
-}
+export const QUALITY_TYPES: QualityType[] = ['string', 'boolean', 'integer', 'date', 'coordinates', 'address', 'reliability'];
 
 /** Which table a source's reference points at. */
-export type ReferenceKind = 'source' | 'meta';
+export type ReferenceKind = 'source' | 'entity';
 
 /** A resolved reference, labelled for display. */
 export interface SourceReference {
@@ -84,8 +61,8 @@ export interface Source {
   stance: Stance | null;
   /** Sibling source in the same container this source reports on. */
   reference_source_id: string | null;
-  /** Global meta source this source reports on. Mutually exclusive with the above. */
-  reference_meta_source_id: string | null;
+  /** Entity this source reports on. Mutually exclusive with the above. */
+  reference_entity_id: string | null;
   /** Optional calendar date the source itself refers to, `YYYY-MM-DD`. */
   source_date: string | null;
   /** Optional wall-clock time, `HH:MM`. Requires `source_date`. */
@@ -111,6 +88,25 @@ export interface ImportedAttachment {
   relative_path: string;
   mime_type: string;
   file_size: number;
+}
+
+/** Status of an OpenTimestamps timestamp proof. */
+export type TimestampStatus = 'pending' | 'confirmed' | 'failed';
+
+/** A recorded OpenTimestamps timestamp proof for an attachment. */
+export interface TimestampRecord {
+  id: string;
+  source_attachment_id: string;
+  ots_path: string;
+  status: TimestampStatus;
+  created_at: string;
+  confirmed_at: string | null;
+  /** Block height of the earliest verified blockchain attestation. */
+  block_height: number | null;
+  /** Block time of the earliest verified blockchain attestation (RFC 3339). */
+  block_time: string | null;
+  /** What the last verification actually checked. */
+  verification_notes: string[];
 }
 
 export type MediaKind = 'image' | 'video' | 'audio' | 'other';
@@ -165,7 +161,7 @@ export const CREDIBILITY_DEFINITIONS: Record<CredibilityCode, { label: string; d
   6: { label: '6 - Truth Cannot Be Judged', description: 'Insufficient information to evaluate credibility. May or may not be true.' },
 };
 
-export const SOURCE_TYPES: SourceType[] = ['URL', 'Document', 'Social Media', 'Image', 'Video', 'Audio', 'Other'];
+export const SOURCE_TYPES: SourceType[] = ['URL', 'Document', 'Social Media', 'Image', 'Video', 'Audio', 'Media', 'Other'];
 
 export const RELIABILITY_CODES: ReliabilityCode[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 export const CREDIBILITY_CODES: CredibilityCode[] = [1, 2, 3, 4, 5, 6];
@@ -189,3 +185,105 @@ export const STANCE_DEFINITIONS: Record<Stance, { label: string; description: st
 
 /** Label for the "no stance" option, used on events and forced on plain cases. */
 export const STANCE_NONE_LABEL = 'None / N/A';
+
+// --- Entities ---
+
+/** A single quality definition within an entity type template. */
+export interface EntityTypeQuality {
+  name: string;
+  type: QualityType;
+  required: boolean;
+}
+
+/** An entity type template.
+ *
+ * Built-in templates are seeded from JSON on first run; after that every
+ * template is a row the type designer can edit. */
+export interface EntityType {
+  id: string;
+  name: string;
+  description: string | null;
+  default_qualities: EntityTypeQuality[];
+  /** True for the templates that ship with the app. They can be edited but not deleted. */
+  is_builtin: boolean;
+}
+
+/** A stored entity. */
+export interface Entity {
+  id: string;
+  entity_type: string;
+  name: string;
+  description: string | null;
+  case_id: string | null;
+  is_global: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A stored quality on an entity. */
+export interface EntityQuality {
+  id: string;
+  entity_id: string;
+  quality_name: string;
+  quality_type: QualityType;
+  value_string: string | null;
+  value_integer: number | null;
+  value_boolean: boolean | null;
+  value_date: string | null;
+  value_coordinates: string | null;
+  value_address: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A link between a quality and a source, carrying the source's Admiralty rating at citation time. */
+export interface QualitySourceRef {
+  id: string;
+  quality_id: string;
+  source_id: string;
+  source_title: string | null;
+  reliability_code: ReliabilityCode | null;
+  credibility_code: CredibilityCode | null;
+  created_at: string;
+}
+
+/** A quality plus the sources referenced as provenance. */
+export interface EntityQualityWithRefs extends EntityQuality {
+  source_refs: QualitySourceRef[];
+}
+
+/**
+ * Renders a quality's typed value for display.
+ *
+ * Each quality stores its value in the column matching its type, so reading the
+ * columns in order would surface a stale value left behind when the type was
+ * changed. Only the column for the current `quality_type` is authoritative.
+ */
+export function formatQualityValue(
+  quality: Pick<
+    EntityQuality,
+    | 'quality_type'
+    | 'value_string'
+    | 'value_integer'
+    | 'value_boolean'
+    | 'value_date'
+    | 'value_coordinates'
+    | 'value_address'
+  >
+): string {
+  switch (quality.quality_type) {
+    case 'boolean':
+      return quality.value_boolean === null ? '—' : quality.value_boolean ? 'True' : 'False';
+    case 'integer':
+      return quality.value_integer === null ? '—' : String(quality.value_integer);
+    case 'date':
+      return quality.value_date ?? '—';
+    case 'coordinates':
+      return quality.value_coordinates ?? '—';
+    case 'address':
+      return quality.value_address ?? '—';
+    // 'string' and 'reliability' both carry their value in value_string.
+    default:
+      return quality.value_string ?? '—';
+  }
+}

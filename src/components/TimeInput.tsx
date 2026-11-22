@@ -47,11 +47,11 @@ export function TimeInput({
     const normalized = normalizeTimeInput(raw);
     if (normalized === null) {
       setError('Enter a 24-hour time, e.g. 19:30.');
-      onValidityChange?.(false);
+      validityRef.current?.(false);
       return;
     }
     setError(null);
-    onValidityChange?.(true);
+    validityRef.current?.(true);
     setText(normalized);
     onChange(normalized);
   };
@@ -65,9 +65,14 @@ export function TimeInput({
         inputMode="numeric"
         value={text}
         onChange={(e) => {
-          setText(e.target.value);
+          const raw = e.target.value;
+          setText(raw);
           setError(null);
-          onValidityChange?.(true);
+          // Validity follows the text as typed, not just the committed value:
+          // `9:5` is usable (it normalises on blur) while `25:00` is not, and an
+          // empty field means "no time" rather than an error. Reporting here
+          // keeps Save disabled until the text is actually parseable.
+          validityRef.current?.(normalizeTimeInput(raw) !== null);
         }}
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {

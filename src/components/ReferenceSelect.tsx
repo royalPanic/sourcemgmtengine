@@ -1,4 +1,5 @@
-import type { MetaSourceSummary, SourceReference, SourceWithAttachments } from '../types';
+import { useId } from 'react';
+import type { Entity, SourceReference, SourceWithAttachments } from '../types';
 
 /**
  * What the reference dropdown currently points at.
@@ -8,7 +9,7 @@ import type { MetaSourceSummary, SourceReference, SourceWithAttachments } from '
  * are stored in separate columns, so the selection carries its kind.
  */
 export interface ReferenceSelection {
-  kind: 'none' | 'source' | 'meta';
+  kind: 'none' | 'source' | 'entity';
   id: string;
 }
 
@@ -18,8 +19,8 @@ export const NO_REFERENCE: ReferenceSelection = { kind: 'none', id: '' };
  * True when the selection suppresses the stance.
  *
  * A sibling capture duplicates one piece of evidence, so it must not express a
- * stance. A meta source is an entity that may publish several viewpoints, so
- * its citations stay classifiable.
+ * stance. An entity is a standing actor that may publish several viewpoints,
+ * so its citations stay classifiable.
  */
 export function locksStance(selection: ReferenceSelection): boolean {
   return selection.kind === 'source';
@@ -28,13 +29,13 @@ export function locksStance(selection: ReferenceSelection): boolean {
 /** Reads the stored reference columns into a single selection. */
 export function selectionOf(source: {
   reference_source_id: string | null;
-  reference_meta_source_id: string | null;
+  reference_entity_id: string | null;
 }): ReferenceSelection {
   if (source.reference_source_id) {
     return { kind: 'source', id: source.reference_source_id };
   }
-  if (source.reference_meta_source_id) {
-    return { kind: 'meta', id: source.reference_meta_source_id };
+  if (source.reference_entity_id) {
+    return { kind: 'entity', id: source.reference_entity_id };
   }
   return NO_REFERENCE;
 }
@@ -42,12 +43,12 @@ export function selectionOf(source: {
 /** The two ids a selection maps onto, for the update payload. */
 export function referenceIds(selection: ReferenceSelection): {
   referenceSourceId: string;
-  referenceMetaSourceId: string;
+  referenceEntityId: string;
 } {
   return {
     // Empty string clears the column on the backend.
     referenceSourceId: selection.kind === 'source' ? selection.id : '',
-    referenceMetaSourceId: selection.kind === 'meta' ? selection.id : '',
+    referenceEntityId: selection.kind === 'entity' ? selection.id : '',
   };
 }
 
@@ -63,15 +64,32 @@ function parseOptionValue(value: string): ReferenceSelection {
   if (separator < 0) return NO_REFERENCE;
   const kind = value.slice(0, separator);
   const id = value.slice(separator + 1);
-  if ((kind !== 'source' && kind !== 'meta') || id === '') return NO_REFERENCE;
+  if ((kind !== 'source' && kind !== 'entity') || id === '') return NO_REFERENCE;
   return { kind, id };
+}
+
+/**
+ * Which rating fields a reference supplies, mirroring the backend rule.
+ *
+ * A source reference duplicates one capture, so it supplies both codes. An
+ * entity reference supplies only reliability — credibility is this source's own
+ * assessment of this information, so the operator's value must survive.
+ */
+export function referenceSupplies(selection: ReferenceSelection): {
+  reliability: boolean;
+  credibility: boolean;
+} {
+  return {
+    reliability: selection.kind !== 'none',
+    credibility: selection.kind === 'source',
+  };
 }
 
 /** The rating a reference currently carries, for seeding the fields. */
 export function referenceRating(
   selection: ReferenceSelection,
   siblings: SourceWithAttachments[],
-  metaSources: MetaSourceSummary[]
+  entities: Entity[]
 ): SourceReference | null {
   if (selection.kind === 'source') {
     const source = siblings.find(s => s.id === selection.id);
@@ -85,15 +103,15 @@ export function referenceRating(
     };
   }
 
-  if (selection.kind === 'meta') {
-    const meta = metaSources.find(m => m.id === selection.id);
-    if (!meta) return null;
+  if (selection.kind === 'entity') {
+    const entity = entities.find(e => e.id === selection.id);
+    if (!entity) return null;
     return {
-      kind: 'meta',
-      id: meta.id,
-      label: meta.name,
-      reliability_code: meta.reliability_code,
-      credibility_code: meta.credibility_code,
+      kind: 'entity',
+      id: entity.id,
+      label: entity.name,
+      reliability_code: null,
+      credibility_code: null,
     };
   }
 
@@ -106,7 +124,7 @@ interface ReferenceSelectProps {
   onChange: (next: ReferenceSelection) => void;
   /** Sibling sources in the same case or event, excluding the one being edited. */
   siblings: SourceWithAttachments[];
-  metaSources: MetaSourceSummary[];
+  entities: Entity[];
   /** Disables the control while a save is in flight. */
   disabled?: boolean;
 }
@@ -121,17 +139,23 @@ export function ReferenceSelect({
   value,
   onChange,
   siblings,
-  metaSources,
+  entities,
   disabled = false,
 }: ReferenceSelectProps) {
   const hasSiblings = siblings.length > 0;
-  const hasMeta = metaSources.length > 0;
-  const hasOptions = hasSiblings || hasMeta;
+  const hasEntities = entities.length > 0;
+  const hasOptions = hasSiblings || hasEntities;
+  // The drawer and the new-source modal can both be mounted, so the label needs
+  // an id unique to this instance.
+  const selectId = useId();
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">Reference Source</label>
+      <label htmlFor={selectId} className="block text-sm font-medium mb-1">
+        Reference Source
+      </label>
       <select
+        id={selectId}
         value={optionValue(value)}
         onChange={(e) => onChange(parseOptionValue(e.target.value))}
         className="select"
@@ -141,17 +165,17 @@ export function ReferenceSelect({
         {hasSiblings && (
           <optgroup label="This case / event">
             {siblings.map(source => (
-              <option key={source.id} value={optionValue({ kind: 'source', id: source.id })}>
+              <option key={source.id} value={optionValue({ kind: 'source', id: source.id })} >
                 {source.title}
               </option>
             ))}
           </optgroup>
         )}
-        {hasMeta && (
-          <optgroup label="Meta sources">
-            {metaSources.map(meta => (
-              <option key={meta.id} value={optionValue({ kind: 'meta', id: meta.id })}>
-                {meta.name} ({META_KIND_LABELS[meta.kind]})
+        {hasEntities && (
+          <optgroup label="Entities">
+            {entities.map(entity => (
+              <option key={entity.id} value={optionValue({ kind: 'entity', id: entity.id })} >
+                {entity.name}
               </option>
             ))}
           </optgroup>
@@ -162,22 +186,16 @@ export function ReferenceSelect({
         <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
           {hasOptions
             ? 'Use this when the source reports on a person, organisation, or another capture. Its rating is inherited from the reference.'
-            : 'No other sources or meta sources exist yet.'}
+            : 'No other sources or entities exist yet.'}
         </p>
       ) : (
         <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
           Rating is inherited from the reference and stays in sync.{' '}
           {locksStance(value)
             ? 'Stance is disabled: this duplicates another capture, so it must not count as independent corroboration.'
-            : 'Stance stays editable: a meta source can express several viewpoints.'}
+            : 'Stance stays editable: an entity can express several viewpoints.'}
         </p>
       )}
     </div>
   );
 }
-
-export const META_KIND_LABELS: Record<MetaSourceSummary['kind'], string> = {
-  person: 'Person',
-  organization: 'Organisation',
-  other: 'Other',
-};

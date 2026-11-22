@@ -41,19 +41,41 @@ export function SourceMap({ sources }: SourceMapProps) {
   const points = useMemo(() => collectGeoPoints(sources), [sources]);
 
   // Track the container width so the projection can match the real aspect ratio.
+  //
+  // A resize fires a burst of observer callbacks, and each one would re-project
+  // every land ring. Coalescing to one update per animation frame keeps a
+  // window drag to a single recompute per frame instead of one per event.
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
 
+    let frame: number | null = null;
+    let latest = element.getBoundingClientRect().width;
+
+    const commit = () => {
+      frame = null;
+      setWidth(latest);
+    };
+
     const observer = new ResizeObserver(entries => {
       const entry = entries[0];
-      if (entry) setWidth(entry.contentRect.width);
+      if (!entry) return;
+      latest = entry.contentRect.width;
+
+      if (frame === null) {
+        frame = requestAnimationFrame(commit);
+      }
     });
 
     observer.observe(element);
-    setWidth(element.getBoundingClientRect().width);
+    setWidth(latest);
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+    };
   }, []);
 
   const viewport = { width: Math.max(width, 1), height: MAP_HEIGHT };
@@ -180,7 +202,9 @@ export function SourceMap({ sources }: SourceMapProps) {
               const isHovered = hovered === cluster.key;
               const count = cluster.points.length;
               const color =
-                count > 1 ? '#e4e4e7' : STANCE_COLORS[cluster.points[0].stance ?? 'none'];
+                count > 1
+                  ? '#e4e4e7'
+                  : STANCE_COLORS[cluster.points[0]?.stance ?? 'none'];
               return (
                 <g
                   key={cluster.key}
@@ -239,6 +263,8 @@ function ClusterTooltip({
 }) {
   const count = cluster.points.length;
   const first = cluster.points[0];
+  // A cluster always has at least one point, but the type cannot express that.
+  if (!first) return null;
 
   return (
     <div

@@ -99,6 +99,8 @@ function parseLocal(date: string, time: string): Date | null {
 
   const [year, month, day] = dateParts;
   const [hour, minute] = timeParts;
+  if (year === undefined || month === undefined || day === undefined) return null;
+  if (hour === undefined || minute === undefined) return null;
   const parsed = new Date(year, month - 1, day, hour, minute, 0, 0);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

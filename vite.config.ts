@@ -11,7 +11,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Sourcemaps are useful while debugging a dev build but ship the full
+    // TypeScript source inside the bundle, so they are opt-in for releases.
+    sourcemap: !process.env.TAURI_ENV_RELEASE,
     // TipTap + ProseMirror push the main chunk past the default warning limit.
     chunkSizeWarningLimit: 800,
   },

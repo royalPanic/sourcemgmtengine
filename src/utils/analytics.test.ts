@@ -6,7 +6,7 @@ import {
   formatAverage,
   scoreToBarPercent,
   isReferenceLinked,
-  isMetaReferenced,
+
   RELIABILITY_SCORES,
   CREDIBILITY_SCORES,
 } from './analytics';
@@ -28,7 +28,7 @@ function source(
     credibility_code: credibility,
     stance,
     reference_source_id: null,
-    reference_meta_source_id: null,
+    reference_entity_id: null,
     source_date: null,
     source_time: null,
     custom_metadata: '{}',
@@ -214,8 +214,8 @@ describe('reference-linked sources', () => {
     // are two independent pieces of evidence, not one duplicated.
     const sources = [
       source('supports', 'A', 1),
-      citing({ reference_meta_source_id: 'meta-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
-      citing({ reference_meta_source_id: 'meta-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_entity_id: 'entity-1', stance: 'supports', reliability_code: 'A', credibility_code: 1 }),
+      citing({ reference_entity_id: 'entity-1', stance: 'refutes', reliability_code: 'A', credibility_code: 1 }),
     ];
 
     const result = computeEventAnalytics(sources, opts);
@@ -235,11 +235,7 @@ describe('reference-linked sources', () => {
   it('are detected by either reference column', () => {
     expect(isReferenceLinked(source(null, null, null))).toBe(false);
     expect(isReferenceLinked(citing({ reference_source_id: 'a' }))).toBe(true);
-    expect(isReferenceLinked(citing({ reference_meta_source_id: 'b' }))).toBe(false);
-
-    expect(isMetaReferenced(source(null, null, null))).toBe(false);
-    expect(isMetaReferenced(citing({ reference_meta_source_id: 'b' }))).toBe(true);
-    expect(isMetaReferenced(citing({ reference_source_id: 'a' }))).toBe(false);
+    expect(isReferenceLinked(citing({ reference_entity_id: 'b' }))).toBe(false);
   });
 });
 
@@ -265,7 +261,7 @@ describe('scoreToBarPercent', () => {
   it('decreases monotonically as the score worsens', () => {
     const percents = [1, 2, 3, 4, 5, 6].map(score => scoreToBarPercent(score, 6));
     for (let i = 1; i < percents.length; i += 1) {
-      expect(percents[i]).toBeLessThan(percents[i - 1]);
+      expect(percents[i]!).toBeLessThan(percents[i - 1]!);
     }
   });
 

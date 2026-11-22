@@ -1,0 +1,22 @@
+{
+  "id": "nation",
+  "name": "Nation",
+  "description": "A sovereign state or country.",
+  "default_qualities": [
+    {
+      "name": "Name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "Capital",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "Population",
+      "type": "integer",
+      "required": false
+    }
+  ]
+}

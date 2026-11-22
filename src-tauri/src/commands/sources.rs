@@ -1,19 +1,20 @@
-use tauri::{command, AppHandle};
-use sqlx::Row;
-use serde_json::Value;
 use chrono::Utc;
+use serde_json::Value;
+use sqlx::Row;
+use tauri::{command, AppHandle};
 
+use crate::commands::references::{
+    inherited_rating, propagate_rating, resolve_reference, validate_reference, ReferenceInput,
+};
 use crate::database::pool;
-use crate::models::models::{Source, SourceAttachment, SourceWithAttachments, SourceType, Stance};
+use crate::models::models::{Source, SourceAttachment, SourceType, SourceWithAttachments, Stance};
 use crate::validation::{
     is_hh_mm, is_iso_date, patch_optional, patch_optional_int, validate_credibility_patch,
     validate_reliability_patch,
 };
-use crate::commands::references::{
-    propagate_rating, reference_rating, resolve_reference, validate_reference, ReferenceInput,
-};
 
-const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at";
+const SOURCE_COLUMNS: &str = "id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at";
+const SQLITE_IN_CLAUSE_BATCH_SIZE: usize = 900;
 
 fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
     let source_type_str: String = row.get("source_type");
@@ -29,7 +30,7 @@ fn source_from_row(row: &sqlx::sqlite::SqliteRow) -> Source {
         credibility_code: row.get("credibility_code"),
         stance: stance_str.as_deref().and_then(Stance::from_db),
         reference_source_id: row.get("reference_source_id"),
-        reference_meta_source_id: row.get("reference_meta_source_id"),
+        reference_entity_id: row.get("reference_entity_id"),
         source_date: row.get("source_date"),
         source_time: row.get("source_time"),
         custom_metadata: row.get("custom_metadata"),
@@ -53,16 +54,66 @@ async fn fetch_attachments(
 
     Ok(rows
         .into_iter()
-        .map(|row| SourceAttachment {
-            id: row.get("id"),
-            source_id: row.get("source_id"),
-            file_name: row.get("file_name"),
-            relative_path: row.get("relative_path"),
-            mime_type: row.get("mime_type"),
-            file_size: row.get("file_size"),
-            created_at: row.get("created_at"),
-        })
+        .map(|row| attachment_from_row(&row))
         .collect())
+}
+
+fn attachment_from_row(row: &sqlx::sqlite::SqliteRow) -> SourceAttachment {
+    SourceAttachment {
+        id: row.get("id"),
+        source_id: row.get("source_id"),
+        file_name: row.get("file_name"),
+        relative_path: row.get("relative_path"),
+        mime_type: row.get("mime_type"),
+        file_size: row.get("file_size"),
+        created_at: row.get("created_at"),
+    }
+}
+
+/// Loads every attachment for a set of sources in one query.
+///
+/// `get_sources` used to call [`fetch_attachments`] once per row, which is one
+/// query per source. Grouping them here reduces round-trips to one query per
+/// bounded batch.
+async fn fetch_attachments_for_sources(
+    pool: &sqlx::SqlitePool,
+    source_ids: &[String],
+) -> Result<std::collections::HashMap<String, Vec<SourceAttachment>>, String> {
+    let mut grouped: std::collections::HashMap<String, Vec<SourceAttachment>> =
+        std::collections::HashMap::new();
+
+    if source_ids.is_empty() {
+        return Ok(grouped);
+    }
+
+    for source_id_batch in source_ids.chunks(SQLITE_IN_CLAUSE_BATCH_SIZE) {
+        let placeholders = crate::commands::references::placeholders(source_id_batch.len());
+        let query = format!(
+            "SELECT id, source_id, file_name, relative_path, mime_type, file_size, created_at \
+             FROM source_attachments WHERE source_id IN ({placeholders}) \
+             ORDER BY source_id, created_at"
+        );
+
+        let mut statement = sqlx::query(&query);
+        for id in source_id_batch {
+            statement = statement.bind(id);
+        }
+
+        let rows = statement
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to get attachments: {}", e))?;
+
+        for row in &rows {
+            let attachment = attachment_from_row(row);
+            grouped
+                .entry(attachment.source_id.clone())
+                .or_default()
+                .push(attachment);
+        }
+    }
+
+    Ok(grouped)
 }
 
 async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAttachments>, String> {
@@ -83,36 +134,29 @@ async fn fetch_source(app: &AppHandle, id: &str) -> Result<Option<SourceWithAtta
     let reference = resolve_reference(
         &pool,
         source.reference_source_id.as_deref(),
-        source.reference_meta_source_id.as_deref(),
+        source.reference_entity_id.as_deref(),
     )
     .await?;
 
-    Ok(Some(SourceWithAttachments { source, attachments, reference }))
+    Ok(Some(SourceWithAttachments {
+        source,
+        attachments,
+        reference,
+    }))
 }
 
-/// A stance only makes sense on an event. Sources on plain cases must leave it
-/// unset, so this rejects the combination rather than silently storing it.
+/// A stance is allowed on any case, since all cases can optionally carry a
+/// date/time. Only `None` (no stance) is always valid.
 async fn validate_stance(
-    app: &AppHandle,
-    case_id: &str,
+    _app: &AppHandle,
+    _case_id: &str,
     stance: &Option<Stance>,
 ) -> Result<(), String> {
     if stance.is_none() {
         return Ok(());
     }
 
-    let pool = pool::pool(app).await?;
-    let kind: Option<String> = sqlx::query_scalar("SELECT kind FROM cases WHERE id = ?")
-        .bind(case_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| format!("Failed to look up container kind: {}", e))?;
-
-    match kind.as_deref() {
-        Some("event") => Ok(()),
-        Some(_) => Err("Stance can only be set on sources belonging to an event".to_string()),
-        None => Err("Container not found".to_string()),
-    }
+    Ok(())
 }
 
 /// Rejects a source date/time pair that does not match the expected shape, so
@@ -132,7 +176,7 @@ fn validate_source_datetime(
         if !time.is_empty() && !is_hh_mm(time) {
             return Err(format!("Source time must be HH:MM, got \"{}\"", time));
         }
-        if source_date.as_deref().map_or(true, str::is_empty) {
+        if matches!(source_date.as_deref(), None | Some("")) {
             return Err("A source time requires a source date".to_string());
         }
     }
@@ -152,7 +196,7 @@ pub async fn create_source(
     credibility_code: Option<i32>,
     stance: Option<Stance>,
     reference_source_id: Option<String>,
-    reference_meta_source_id: Option<String>,
+    reference_entity_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Value,
@@ -172,7 +216,7 @@ pub async fn create_source(
     validate_source_datetime(&source_date, &source_time)?;
 
     let pool = pool::pool(&app).await?;
-    let reference = ReferenceInput::new(reference_source_id, reference_meta_source_id);
+    let reference = ReferenceInput::new(reference_source_id, reference_entity_id.clone());
 
     let mut source = Source::new(
         case_id,
@@ -184,7 +228,7 @@ pub async fn create_source(
         credibility_code,
         stance,
         reference.source_id.clone(),
-        reference.meta_source_id.clone(),
+        reference.entity_id.clone(),
         source_date,
         source_time,
         custom_metadata,
@@ -192,15 +236,23 @@ pub async fn create_source(
 
     // A citing source mirrors its reference's rating. Only a reference to
     // another source also suppresses the stance: that is a duplicate capture of
-    // one piece of evidence, whereas a meta source can express several
-    // viewpoints across different captures.
+    // one piece of evidence, whereas an entity can express several viewpoints
+    // across different captures.
     if reference.is_set() {
         validate_reference(&pool, &source.case_id, &source.id, &reference)
             .await
             .map_err(|e| e.message().to_string())?;
-        let (reliability, credibility) = reference_rating(&pool, &reference).await?;
-        source.reliability_code = reliability;
-        source.credibility_code = credibility;
+
+        // A source reference supplies both codes; an entity reference supplies
+        // only reliability, leaving credibility to this source's own assessment.
+        let inherited = inherited_rating(&pool, &reference).await?;
+        if let Some(reliability) = inherited.reliability {
+            source.reliability_code = reliability;
+        }
+        if let Some(credibility) = inherited.credibility {
+            source.credibility_code = credibility;
+        }
+
         if reference.locks_stance() {
             source.stance = None;
         }
@@ -211,7 +263,7 @@ pub async fn create_source(
     let now = Utc::now().to_rfc3339();
 
     sqlx::query(
-        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_meta_source_id, source_date, source_time, custom_metadata, created_at, updated_at)
+        r#"INSERT INTO sources (id, case_id, title, source_type, url, raw_text, reliability_code, credibility_code, stance, reference_source_id, reference_entity_id, source_date, source_time, custom_metadata, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&source.id)
@@ -224,7 +276,7 @@ pub async fn create_source(
     .bind(source.credibility_code)
     .bind(source.stance.as_ref().map(|s| s.as_db()))
     .bind(&source.reference_source_id)
-    .bind(&source.reference_meta_source_id)
+    .bind(&source.reference_entity_id)
     .bind(&source.source_date)
     .bind(&source.source_time)
     .bind(&source.custom_metadata)
@@ -253,24 +305,42 @@ pub async fn get_sources(
         .await
         .map_err(|e| format!("Failed to get sources: {}", e))?;
 
-    let mut sources = Vec::with_capacity(rows.len());
-    for row in rows {
-        let source = source_from_row(&row);
-        let attachments = fetch_attachments(&app, &source.id).await?;
-        let reference = resolve_reference(
-            &pool,
-            source.reference_source_id.as_deref(),
-            source.reference_meta_source_id.as_deref(),
-        )
-        .await?;
-        sources.push(SourceWithAttachments { source, attachments, reference });
-    }
+    let sources: Vec<Source> = rows.iter().map(source_from_row).collect();
 
-    Ok(sources)
+    // Load attachments and references in bounded batches rather than issuing
+    // two queries per source.
+    let source_ids: Vec<String> = sources.iter().map(|s| s.id.clone()).collect();
+    let attachments = fetch_attachments_for_sources(&pool, &source_ids).await?;
+
+    let reference_inputs: Vec<(String, Option<String>, Option<String>)> = sources
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                s.reference_source_id.clone(),
+                s.reference_entity_id.clone(),
+            )
+        })
+        .collect();
+    let references =
+        crate::commands::references::resolve_references_for_sources(&pool, &reference_inputs)
+            .await?;
+
+    Ok(sources
+        .into_iter()
+        .map(|source| SourceWithAttachments {
+            attachments: attachments.get(&source.id).cloned().unwrap_or_default(),
+            reference: references.get(&source.id).cloned().flatten(),
+            source,
+        })
+        .collect())
 }
 
 #[command]
-pub async fn get_source(app: AppHandle, id: String) -> Result<Option<SourceWithAttachments>, String> {
+pub async fn get_source(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<SourceWithAttachments>, String> {
     fetch_source(&app, &id).await
 }
 
@@ -286,7 +356,7 @@ pub async fn update_source(
     credibility_code: Option<i32>,
     stance: Option<Stance>,
     reference_source_id: Option<String>,
-    reference_meta_source_id: Option<String>,
+    reference_entity_id: Option<String>,
     source_date: Option<String>,
     source_time: Option<String>,
     custom_metadata: Option<Value>,
@@ -325,39 +395,43 @@ pub async fn update_source(
     validate_source_datetime(&effective_date, &effective_time)?;
 
     // Reference patch: omitted leaves the stored reference alone, an empty
-    // string clears it, anything else sets it. Switching from a source
-    // reference to a meta reference therefore sends `""` plus the new meta id.
+    // string clears it, anything else sets it.
     let next_reference = ReferenceInput::new(
         match reference_source_id {
             None => existing.source.reference_source_id.clone(),
             Some(value) => non_empty(value),
         },
-        match reference_meta_source_id {
-            None => existing.source.reference_meta_source_id.clone(),
+        match reference_entity_id {
+            None => existing.source.reference_entity_id.clone(),
             Some(value) => non_empty(value),
         },
     );
     let reference_changed = next_reference.source_id != existing.source.reference_source_id
-        || next_reference.meta_source_id != existing.source.reference_meta_source_id;
+        || next_reference.entity_id != existing.source.reference_entity_id;
 
     if next_reference.is_set() {
         validate_reference(&pool, &existing.source.case_id, &id, &next_reference)
             .await
             .map_err(|e| e.message().to_string())?;
 
-        // Live sync: the citing source always mirrors its reference. A report
-        // of a statement does not change the reliability of the source or the
-        // credibility of the information, so any supplied rating is ignored.
-        let (reliability, credibility) = reference_rating(&pool, &next_reference).await?;
-        reliability_code = Some(reliability);
-        credibility_code = Some(credibility);
+        // Live sync: the citing source mirrors what its reference supplies.
+        // A source reference carries both codes, so it overrides whatever was
+        // patched. An entity reference only supplies reliability — credibility
+        // is this source's own assessment of this information, so the patched
+        // value must survive.
+        let inherited = inherited_rating(&pool, &next_reference).await?;
+        (reliability_code, credibility_code) =
+            inherited.apply_to(reliability_code, credibility_code);
 
-        // Only a reference to another source locks the stance. A meta source
-        // represents an entity that may express several viewpoints, so its
-        // citations stay classifiable and countable.
+        // Only a reference to another source locks the stance. An entity
+        // reference keeps the stance editable.
         if next_reference.locks_stance() {
             stance_patch = Some(None);
         }
+    } else if reference_changed {
+        // Reference was cleared: source can set its own reliability again.
+        // reliability_code and credibility_code keep whatever was patched
+        // (or None if not supplied).
     }
 
     if let Some(Some(stance)) = &stance_patch {
@@ -388,7 +462,7 @@ pub async fn update_source(
     }
     if reference_changed {
         updates.push("reference_source_id = ?");
-        updates.push("reference_meta_source_id = ?");
+        updates.push("reference_entity_id = ?");
     }
     if source_date.is_some() {
         updates.push("source_date = ?");
@@ -404,9 +478,8 @@ pub async fn update_source(
         return Ok(existing.source);
     }
 
-    let rating_touched = reliability_code.is_some()
-        || credibility_code.is_some()
-        || reference_changed;
+    let rating_touched =
+        reliability_code.is_some() || credibility_code.is_some() || reference_changed;
 
     updates.push("updated_at = ?");
     let query = format!("UPDATE sources SET {} WHERE id = ?", updates.join(", "));
@@ -436,7 +509,7 @@ pub async fn update_source(
     }
     if reference_changed {
         statement = statement.bind(&next_reference.source_id);
-        statement = statement.bind(&next_reference.meta_source_id);
+        statement = statement.bind(&next_reference.entity_id);
     }
     if let Some(source_date) = source_date {
         statement = statement.bind(source_date);
@@ -458,7 +531,7 @@ pub async fn update_source(
     // Any source that cites this one mirrors its rating, so a rating change
     // here has to reach them.
     if rating_touched {
-        propagate_rating(&pool, &id, &mut Vec::new()).await?;
+        propagate_rating(&pool, &id).await?;
     }
 
     fetch_source(&app, &id)
@@ -488,6 +561,24 @@ pub async fn delete_source(app: AppHandle, id: String) -> Result<(), String> {
         .execute(&pool)
         .await
         .map_err(|e| format!("Failed to clear source citations: {}", e))?;
+
+    // Remove the files before the rows: once the rows are gone there is no
+    // record of where the bytes live, and the attachment store would grow
+    // without bound.
+    let paths: Vec<String> =
+        sqlx::query_scalar("SELECT relative_path FROM source_attachments WHERE source_id = ?")
+            .bind(&id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("Failed to list source attachments: {}", e))?;
+
+    for relative_path in &paths {
+        if let Err(e) = crate::commands::files::remove_attachment_files(&app, relative_path) {
+            // A file that cannot be removed must not block the row delete, or
+            // the operator can never get rid of the source at all.
+            eprintln!("Failed to remove attachment {relative_path}: {e}");
+        }
+    }
 
     sqlx::query("DELETE FROM source_attachments WHERE source_id = ?")
         .bind(&id)
@@ -545,4 +636,63 @@ pub async fn delete_source_attachment(app: AppHandle, id: String) -> Result<(), 
         .map_err(|e| format!("Failed to delete attachment: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fetch_attachments_for_sources;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn attachment_lookup_batches_large_source_lists_and_keeps_order() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory database");
+
+        sqlx::query(
+            "CREATE TABLE source_attachments (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                mime_type TEXT,
+                file_size INTEGER,
+                created_at TEXT NOT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("attachment schema");
+
+        for (id, name, created_at) in [
+            ("a2", "later.jpg", "2024-02-02"),
+            ("a1", "earlier.jpg", "2024-02-01"),
+        ] {
+            sqlx::query(
+                "INSERT INTO source_attachments \
+                 (id, source_id, file_name, relative_path, created_at) \
+                 VALUES (?, 'source-900', ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(name)
+            .bind(name)
+            .bind(created_at)
+            .execute(&pool)
+            .await
+            .expect("attachment row");
+        }
+
+        let source_ids: Vec<String> = (0..901).map(|id| format!("source-{id}")).collect();
+        let attachments = fetch_attachments_for_sources(&pool, &source_ids)
+            .await
+            .expect("batched attachment lookup");
+        let names: Vec<&str> = attachments["source-900"]
+            .iter()
+            .map(|attachment| attachment.file_name.as_str())
+            .collect();
+
+        assert_eq!(names, ["earlier.jpg", "later.jpg"]);
+    }
 }
