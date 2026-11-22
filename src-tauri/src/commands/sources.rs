@@ -354,7 +354,7 @@ pub async fn update_source(
     raw_text: Option<String>,
     reliability_code: Option<String>,
     credibility_code: Option<i32>,
-    stance: Option<Stance>,
+    stance: Option<String>,
     reference_source_id: Option<String>,
     reference_entity_id: Option<String>,
     source_date: Option<String>,
@@ -368,6 +368,10 @@ pub async fn update_source(
         .await?
         .ok_or("Source not found".to_string())?;
 
+    // Empty strings clear optional text columns to NULL; omitting leaves them alone.
+    let url = patch_optional(url);
+    let raw_text = patch_optional(raw_text);
+
     // Ratings are optional. An empty string (reliability) or 0 (credibility)
     // means "clear", matching how the create path treats an unrated source.
     validate_reliability_patch(&reliability_code)?;
@@ -376,8 +380,24 @@ pub async fn update_source(
     let mut credibility_code = patch_optional_int(credibility_code);
 
     // `Some` on the outer option means "touch the column"; the inner value is
-    // what to store, with `None` meaning NULL.
-    let mut stance_patch: Option<Option<Stance>> = stance.map(Some);
+    // what to store, with `None` meaning NULL (sent as an empty string).
+    let mut stance_patch: Option<Option<Stance>> = match stance {
+        None => None,
+        Some(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Some(None)
+            } else {
+                let parsed = Stance::from_db(trimmed).ok_or_else(|| {
+                    format!(
+                        "Stance must be supports, refutes, or neutral, got \"{}\"",
+                        trimmed
+                    )
+                })?;
+                Some(Some(parsed))
+            }
+        }
+    };
 
     let source_date = patch_optional(source_date);
     let source_time = patch_optional(source_time);
