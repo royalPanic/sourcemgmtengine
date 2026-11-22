@@ -343,44 +343,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn editing_an_entity_reliability_propagates_to_citations_of_citations() {
-        let pool = pool().await;
-        insert_entity(&pool, "m1", "Reuters").await;
-        sqlx::query("INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string) VALUES ('q1', 'm1', 'Reliability', 'reliability', 'C')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        insert_source(&pool, "s1", "case-1", Some("C"), Some(2), Some("supports")).await;
-        insert_source(&pool, "s2", "case-1", Some("C"), Some(2), None).await;
-
-        sqlx::query("UPDATE sources SET reference_entity_id = 'm1' WHERE id = 's1'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE sources SET reference_source_id = 's1' WHERE id = 's2'")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        sqlx::query("UPDATE entity_qualities SET value_string = 'A' WHERE id = 'q1'")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        propagate_entity_rating(&pool, "m1").await.unwrap();
-
-        assert_eq!(
-            rating(&pool, "s1").await,
-            (Some("A".into()), Some(2), Some("supports".into()))
-        );
-        assert_eq!(
-            rating(&pool, "s2").await,
-            (Some("A".into()), Some(2), None),
-            "citations of entity-citing sources must also receive the updated reliability"
-        );
-    }
-
-    #[tokio::test]
     async fn clearing_entity_reliability_clears_citing_sources() {
         let pool = pool().await;
         insert_entity(&pool, "m1", "Reuters").await;

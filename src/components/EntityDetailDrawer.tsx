@@ -91,8 +91,7 @@ export function EntityDetailDrawer({
     try {
       await onUpdateEntity(entity!.id, {
         name: name.trim(),
-        // An empty string clears the stored description rather than leaving it untouched.
-        description: description.trim(),
+        description: description.trim() || undefined,
         // An empty string clears the column, so a global entity drops its case.
         caseId: isGlobal ? '' : targetCaseId ?? '',
         isGlobal,

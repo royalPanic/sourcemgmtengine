@@ -713,36 +713,27 @@ pub async fn create_entity(
     })
 }
 
-async fn fetch_entity_from_pool(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-) -> Result<Option<Entity>, String> {
+async fn fetch_entity(app: &AppHandle, id: &str) -> Result<Option<Entity>, String> {
+    let pool = pool::pool(app).await?;
     let query = format!("SELECT {} FROM entities WHERE id = ?", ENTITY_COLUMNS);
     let row = sqlx::query(&query)
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(&pool)
         .await
         .map_err(|e| format!("Failed to get entity: {}", e))?;
 
     Ok(row.map(entity_from_row))
 }
 
-async fn fetch_entity(app: &AppHandle, id: &str) -> Result<Option<Entity>, String> {
+async fn fetch_quality(app: &AppHandle, id: &str) -> Result<Option<EntityQuality>, String> {
     let pool = pool::pool(app).await?;
-    fetch_entity_from_pool(&pool, id).await
-}
-
-async fn fetch_quality_from_pool(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-) -> Result<Option<EntityQuality>, String> {
     let query = format!(
         "SELECT {} FROM entity_qualities WHERE id = ?",
         QUALITY_COLUMNS
     );
     let row = sqlx::query(&query)
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(&pool)
         .await
         .map_err(|e| format!("Failed to get quality: {}", e))?;
 
@@ -908,48 +899,26 @@ pub async fn update_entity(
     is_global: Option<bool>,
 ) -> Result<Entity, String> {
     let pool = pool::pool(&app).await?;
-    update_entity_in_pool(&pool, &id, name, description, case_id, is_global).await
-}
-
-pub(crate) async fn update_entity_in_pool(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-    name: Option<String>,
-    description: Option<String>,
-    case_id: Option<String>,
-    is_global: Option<bool>,
-) -> Result<Entity, String> {
     let now = Utc::now().to_rfc3339();
 
-    let existing = fetch_entity_from_pool(pool, id)
+    let existing = fetch_entity(&app, &id)
         .await?
         .ok_or("Entity not found".to_string())?;
 
     let next_name = match &name {
         Some(n) => Some(validate_name(n)?),
-        None => None,
+        None => Some(existing.name.clone()),
     };
-    let next_description = patch_optional(description);
-    let mut next_case_id = patch_optional(case_id);
+    let next_description = patch_optional(description.clone());
+    let next_case_id = patch_optional(case_id.clone());
     let next_is_global = is_global.unwrap_or(existing.is_global);
 
-    // Promoting a case-specific entity to global without explicitly sending
-    // `case_id: ""` clears its case link so the row stays consistent.
-    if is_global == Some(true) && next_case_id.is_none() && existing.case_id.is_some() {
-        next_case_id = Some(None);
-    }
-
-    let effective_case_id = match &next_case_id {
-        Some(patch) => patch.as_deref(),
-        None => existing.case_id.as_deref(),
-    };
-
-    // Validate global/case_id consistency against the effective post-update values.
-    if is_global.is_some() || next_case_id.is_some() {
-        if next_is_global && effective_case_id.is_some() {
+    // Validate global/case_id consistency only when either field is being changed.
+    if is_global.is_some() || case_id.is_some() {
+        if next_is_global && matches!(next_case_id.as_ref(), Some(Some(_))) {
             return Err("A global entity cannot belong to a case".to_string());
         }
-        if !next_is_global && effective_case_id.is_none() {
+        if !next_is_global && !matches!(next_case_id.as_ref(), Some(Some(_))) {
             return Err("A non-global entity must belong to a case or event".to_string());
         }
     }
@@ -958,7 +927,7 @@ pub(crate) async fn update_entity_in_pool(
     if let Some(Some(cid)) = &next_case_id {
         let exists: Option<String> = sqlx::query_scalar("SELECT id FROM cases WHERE id = ?")
             .bind(cid)
-            .fetch_optional(pool)
+            .fetch_optional(&pool)
             .await
             .map_err(|e| format!("Failed to look up container: {}", e))?;
         if exists.is_none() {
@@ -967,13 +936,13 @@ pub(crate) async fn update_entity_in_pool(
     }
 
     let mut updates: Vec<&str> = Vec::new();
-    if next_name.is_some() {
+    if name.is_some() {
         updates.push("name = ?");
     }
-    if next_description.is_some() {
+    if description.is_some() {
         updates.push("description = ?");
     }
-    if next_case_id.is_some() {
+    if case_id.is_some() {
         updates.push("case_id = ?");
     }
     if is_global.is_some() {
@@ -1002,12 +971,12 @@ pub(crate) async fn update_entity_in_pool(
     }
     statement
         .bind(&now)
-        .bind(id)
-        .execute(pool)
+        .bind(&id)
+        .execute(&pool)
         .await
         .map_err(|e| format!("Failed to update entity: {}", e))?;
 
-    fetch_entity_from_pool(pool, id)
+    fetch_entity(&app, &id)
         .await?
         .ok_or("Entity not found after update".to_string())
 }
@@ -1168,43 +1137,15 @@ pub async fn update_entity_quality(
     value_address: Option<Option<String>>,
 ) -> Result<EntityQualityWithRefs, String> {
     let pool = pool::pool(&app).await?;
-    update_entity_quality_in_pool(
-        &pool,
-        &id,
-        quality_name,
-        quality_type,
-        value_string,
-        value_integer,
-        value_boolean,
-        value_date,
-        value_coordinates,
-        value_address,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn update_entity_quality_in_pool(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-    quality_name: Option<String>,
-    quality_type: Option<String>,
-    value_string: Option<Option<String>>,
-    value_integer: Option<Option<i32>>,
-    value_boolean: Option<Option<bool>>,
-    value_date: Option<Option<String>>,
-    value_coordinates: Option<Option<String>>,
-    value_address: Option<Option<String>>,
-) -> Result<EntityQualityWithRefs, String> {
     let now = Utc::now().to_rfc3339();
 
-    let existing = fetch_quality_from_pool(pool, id)
+    let existing = fetch_quality(&app, &id)
         .await?
         .ok_or("Quality not found".to_string())?;
 
     let next_name = match &quality_name {
         Some(n) => Some(validate_name(n)?),
-        None => None,
+        None => Some(existing.quality_name.clone()),
     };
     let next_type = match &quality_type {
         Some(t) => {
@@ -1223,21 +1164,21 @@ pub(crate) async fn update_entity_quality_in_pool(
         // An entity may have at most one reliability quality — it drives
         // source reliability propagation, so multiple would be ambiguous.
         // Exclude this quality itself from the check.
-        let existing_reliability: Option<String> = sqlx::query_scalar(
+        let existing: Option<String> = sqlx::query_scalar(
             "SELECT id FROM entity_qualities WHERE entity_id = ? AND quality_type = 'reliability' AND id != ?",
         )
         .bind(&existing.entity_id)
         .bind(&existing.id)
-        .fetch_optional(pool)
+        .fetch_optional(&pool)
         .await
         .map_err(|e| format!("Failed to check for existing reliability quality: {}", e))?;
-        if existing_reliability.is_some() {
+        if existing.is_some() {
             return Err("Entity already has a reliability quality".to_string());
         }
     }
 
     let mut updates: Vec<&str> = Vec::new();
-    if next_name.is_some() {
+    if quality_name.is_some() {
         updates.push("quality_name = ?");
     }
     if quality_type.is_some() {
@@ -1263,7 +1204,7 @@ pub(crate) async fn update_entity_quality_in_pool(
     }
 
     if updates.is_empty() {
-        let source_refs = fetch_quality_source_refs(pool, &existing.id).await?;
+        let source_refs = fetch_quality_source_refs(&pool, &existing.id).await?;
         return Ok(EntityQualityWithRefs {
             quality: existing,
             source_refs,
@@ -1303,21 +1244,21 @@ pub(crate) async fn update_entity_quality_in_pool(
     }
     statement
         .bind(&now)
-        .bind(id)
-        .execute(pool)
+        .bind(&id)
+        .execute(&pool)
         .await
         .map_err(|e| format!("Failed to update quality: {}", e))?;
 
     // If this is a reliability quality, propagate its value to all sources
     // that reference this entity.
     if existing.quality_type == "reliability" || next_type == "reliability" {
-        propagate_entity_rating(pool, &existing.entity_id).await?;
+        propagate_entity_rating(&pool, &existing.entity_id).await?;
     }
 
-    let updated = fetch_quality_from_pool(pool, id)
+    let updated = fetch_quality(&app, &id)
         .await?
         .ok_or("Quality not found after update".to_string())?;
-    let source_refs = fetch_quality_source_refs(pool, &updated.id).await?;
+    let source_refs = fetch_quality_source_refs(&pool, &updated.id).await?;
     Ok(EntityQualityWithRefs {
         quality: updated,
         source_refs,
@@ -1466,154 +1407,5 @@ fn validate_credibility_patch(value: Option<i32>) -> Result<(), String> {
         None | Some(0) => Ok(()),
         Some(code) if crate::validation::is_credibility_code(code) => Ok(()),
         Some(code) => Err(format!("Credibility must be 1-6, got {}", code)),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{update_entity_in_pool, update_entity_quality_in_pool};
-    use sqlx::sqlite::SqlitePoolOptions;
-
-    async fn test_pool() -> sqlx::SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("in-memory sqlite");
-
-        sqlx::query(
-            "CREATE TABLE cases (id TEXT PRIMARY KEY);
-             CREATE TABLE entities (
-                 id TEXT PRIMARY KEY,
-                 entity_type TEXT NOT NULL,
-                 name TEXT NOT NULL,
-                 description TEXT,
-                 case_id TEXT,
-                 is_global INTEGER NOT NULL DEFAULT 1,
-                 created_at TEXT NOT NULL,
-                 updated_at TEXT NOT NULL
-             );
-             CREATE TABLE entity_qualities (
-                 id TEXT PRIMARY KEY,
-                 entity_id TEXT NOT NULL,
-                 quality_name TEXT NOT NULL,
-                 quality_type TEXT NOT NULL,
-                 value_string TEXT,
-                 value_integer INTEGER,
-                 value_boolean INTEGER,
-                 value_date TEXT,
-                 value_coordinates TEXT,
-                 value_address TEXT,
-                 created_at TEXT NOT NULL,
-                 updated_at TEXT NOT NULL
-             );
-             CREATE TABLE sources (
-                 id TEXT PRIMARY KEY,
-                 title TEXT NOT NULL,
-                 reliability_code TEXT,
-                 credibility_code INTEGER,
-                 stance TEXT,
-                 reference_source_id TEXT,
-                 reference_entity_id TEXT,
-                 updated_at TEXT NOT NULL
-             );
-             CREATE TABLE quality_source_refs (
-                 id TEXT PRIMARY KEY,
-                 quality_id TEXT NOT NULL,
-                 source_id TEXT NOT NULL,
-                 reliability_code TEXT,
-                 credibility_code INTEGER,
-                 created_at TEXT NOT NULL
-             );",
-        )
-        .execute(&pool)
-        .await
-        .expect("schema");
-
-        sqlx::query("INSERT INTO cases (id) VALUES ('c1')")
-            .execute(&pool)
-            .await
-            .expect("case");
-        sqlx::query(
-            "INSERT INTO entities (id, entity_type, name, description, case_id, is_global, created_at, updated_at) \
-             VALUES ('e1', 'person', 'Alice', 'Initial bio', 'c1', 0, '2026-01-01', '2026-01-01')",
-        )
-        .execute(&pool)
-        .await
-        .expect("entity");
-        sqlx::query(
-            "INSERT INTO entity_qualities (id, entity_id, quality_name, quality_type, value_string, created_at, updated_at) \
-             VALUES ('q1', 'e1', 'Role', 'string', 'Analyst', '2026-01-01', '2026-01-01')",
-        )
-        .execute(&pool)
-        .await
-        .expect("quality");
-
-        pool
-    }
-
-    #[tokio::test]
-    async fn partial_entity_update_without_name_updates_only_requested_columns() {
-        let pool = test_pool().await;
-
-        let updated = update_entity_in_pool(
-            &pool,
-            "e1",
-            None,
-            Some("Updated bio".to_string()),
-            None,
-            None,
-        )
-        .await
-        .expect("partial update");
-
-        assert_eq!(updated.name, "Alice");
-        assert_eq!(updated.description.as_deref(), Some("Updated bio"));
-        assert_eq!(updated.case_id.as_deref(), Some("c1"));
-        assert!(!updated.is_global);
-    }
-
-    #[tokio::test]
-    async fn clearing_entity_description_and_promoting_to_global_work() {
-        let pool = test_pool().await;
-
-        let updated = update_entity_in_pool(
-            &pool,
-            "e1",
-            None,
-            Some(String::new()),
-            None,
-            Some(true),
-        )
-        .await
-        .expect("promote and clear description");
-
-        assert_eq!(updated.name, "Alice");
-        assert_eq!(updated.description, None);
-        assert_eq!(updated.case_id, None);
-        assert!(updated.is_global);
-    }
-
-    #[tokio::test]
-    async fn partial_quality_update_without_name_updates_value_cleanly() {
-        let pool = test_pool().await;
-
-        let updated = update_entity_quality_in_pool(
-            &pool,
-            "q1",
-            None,
-            None,
-            Some(Some("Lead Analyst".to_string())),
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect("partial quality update");
-
-        assert_eq!(updated.quality.quality_name, "Role");
-        assert_eq!(updated.quality.value_string.as_deref(), Some("Lead Analyst"));
     }
 }

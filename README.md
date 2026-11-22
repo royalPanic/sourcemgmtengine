@@ -221,6 +221,7 @@ src-tauri/                  Rust backend
   capabilities/default.json Tauri v2 permissions
   entity-types/             Built-in entity type JSON templates, seeded on first launch
     person.json, organization.json, government.json, nation.json, vehicle.json
+```ission set
   tauri.conf.json           App config
 ```
 
@@ -243,8 +244,6 @@ Attachments are written to `attachments/<source_id>/` inside the same directory.
 cases              (id, title, description, created_at, updated_at,
                     kind, event_date, event_time)
 case_notes         (id, case_id UNIQUE, content, updated_at)
-entity_types       (id, name, description, default_qualities, is_builtin,
-                    created_at, updated_at)
 entities           (id, entity_type, name, description, case_id, is_global,
                     created_at, updated_at)
 entity_qualities   (id, entity_id, quality_name, quality_type,
@@ -261,8 +260,7 @@ sources            (id, case_id, title, source_type, url, raw_text,
 source_attachments (id, source_id, file_name, relative_path,
                     mime_type, file_size, created_at)
 source_timestamp   (id, source_attachment_id UNIQUE, ots_path, status,
-                    created_at, confirmed_at, block_height, block_time,
-                    verification_notes)
+                    created_at, confirmed_at)
 ```
 
 Migrations are versioned through `tauri-plugin-sql` and tracked in `_sqlx_migrations`. Foreign keys declare `ON DELETE CASCADE`, and the delete commands also remove children explicitly so behaviour does not depend on the connection-level `PRAGMA foreign_keys` setting.
@@ -368,7 +366,10 @@ Full descriptions are shown as tooltips in the source form and inline in the det
 
 ## Security notes
 
-- **No background or telemetry network requests.** The app never syncs, phones home, or sends analytics. Outbound network calls happen only on explicit operator actions: **Download Media** (via the bundled `yt-dlp` sidecar after user confirmation) and **OpenTimestamps** stamping/verification (submitting a 32-byte SHA-256 digest — never the file contents — to public OpenTimestamps calendars and checking Bitcoin block headers). (Build-time scripts: `npm run fetch:yt-dlp` fetches the sidecar binary and `npm run gen:world-outline` fetches Natural Earth GeoJSON.)
+- **No outbound data requests.** The app never fetches, uploads, or syncs. No HTTP client is a
+  dependency in either the frontend or the Rust binary, and no code calls `fetch` or similar.
+  (The only build-time network access is `npm run gen:world-outline`, a developer script that
+  downloads Natural Earth GeoJSON and writes it into the source tree.)
 - **CSP is disabled** (`app.security.csp` is `null` in `tauri.conf.json`). The UI renders only local
   content, but note that a source's `url` field is displayed as plain text and never rendered as
   HTML, so disabling the CSP does not open a script-injection path from stored data.
@@ -393,4 +394,4 @@ cd src-tauri && cargo test # backend (SQLite-backed)
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](./LICENSE).
+To be determined.

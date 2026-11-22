@@ -91,7 +91,7 @@ export const sourcesApi = {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
-    stance: Stance | '';
+    stance: Stance;
     referenceSourceId: string;
     referenceEntityId: string;
     sourceDate: string;

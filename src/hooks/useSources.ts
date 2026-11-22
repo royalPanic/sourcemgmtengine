@@ -84,7 +84,7 @@ export function useSources(caseId: string | null) {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
-    stance: Stance | '';
+    stance: Stance;
     referenceSourceId: string;
     referenceEntityId: string;
     sourceDate: string;
@@ -176,26 +176,26 @@ export function useSources(caseId: string | null) {
   const getAttachmentUrl = (relativePath: string) => filesApi.assetUrl(relativePath);
 
   /**
-   * Creates an OpenTimestamps timestamp proof for an attachment.
-   */
-  const timestampAttachment = useCallback(async (attachmentId: string): Promise<TimestampRecord> => {
-    return timestampApi.timestampAttachment(attachmentId);
-  }, []);
+     * Creates an OpenTimestamps timestamp proof for an attachment.
+     */
+    const timestampAttachment = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.timestampAttachment(attachmentId);
+    };
 
-  /**
-   * Re-checks an existing timestamp proof against the calendars and the
-   * Bitcoin blockchain, upgrading it if a confirmation is now available.
-   */
-  const verifyTimestamp = useCallback(async (attachmentId: string): Promise<TimestampRecord> => {
-    return timestampApi.verifyTimestamp(attachmentId);
-  }, []);
+    /**
+     * Re-checks an existing timestamp proof against the calendars and the
+     * Bitcoin blockchain, upgrading it if a confirmation is now available.
+     */
+    const verifyTimestamp = async (attachmentId: string): Promise<TimestampRecord> => {
+      return timestampApi.verifyTimestamp(attachmentId);
+    };
 
-  /**
-   * Gets the timestamp record for an attachment, if any.
-   */
-  const getTimestampStatus = useCallback(async (attachmentId: string): Promise<TimestampRecord | null> => {
-    return timestampApi.getTimestampStatus(attachmentId);
-  }, []);
+    /**
+     * Gets the timestamp record for an attachment, if any.
+     */
+    const getTimestampStatus = async (attachmentId: string): Promise<TimestampRecord | null> => {
+      return timestampApi.getTimestampStatus(attachmentId);
+    };
 
   return {
     sources,
