@@ -31,7 +31,7 @@ interface DetailDrawerProps {
     rawText: string;
     reliabilityCode: string;
     credibilityCode: number;
-    stance: Stance;
+    stance: Stance | '';
     referenceSourceId: string;
     referenceEntityId: string;
     sourceDate: string;
@@ -43,13 +43,23 @@ interface DetailDrawerProps {
   onOpenAttachment: (relativePath: string) => Promise<void>;
   resolveAttachmentUrl: (relativePath: string) => Promise<string>;
   downloadMedia: (sourceId: string, url: string) => Promise<unknown>;
-    timestampAttachment: (attachmentId: string) => Promise<TimestampRecord>;
-    verifyTimestamp: (attachmentId: string) => Promise<TimestampRecord>;
-    getTimestampStatus: (attachmentId: string) => Promise<TimestampRecord | null>;
+  timestampAttachment: (attachmentId: string) => Promise<TimestampRecord>;
+  verifyTimestamp: (attachmentId: string) => Promise<TimestampRecord>;
+  getTimestampStatus: (attachmentId: string) => Promise<TimestampRecord | null>;
 }
 
-export function DetailDrawer({
-  isOpen,
+export function DetailDrawer(props: DetailDrawerProps) {
+  if (!props.isOpen || !props.source) return null;
+  // Keying by source.id ensures opening the drawer or switching between sources
+  // remounts the form with fresh initial state rather than keeping stale values.
+  return <DetailDrawerContent key={props.source.id} {...props} source={props.source} />;
+}
+
+type DetailDrawerContentProps = Omit<DetailDrawerProps, 'isOpen' | 'source'> & {
+  source: SourceWithAttachments;
+};
+
+function DetailDrawerContent({
   onClose,
   source,
   siblings,
@@ -62,14 +72,13 @@ export function DetailDrawer({
   downloadMedia,
   timestampAttachment,
   verifyTimestamp,
-    getTimestampStatus,
-  }: DetailDrawerProps) {
-  // The form owns the shared fields; the drawer adds location on top. It is
-  // seeded from the open source, so switching sources remounts the fields.
+  getTimestampStatus,
+}: DetailDrawerContentProps) {
+  // The form owns the shared fields; the drawer adds location on top.
   const form = useSourceForm({
     siblings,
     entities,
-    initial: source ? toFormInitial(source) : undefined,
+    initial: toFormInitial(source),
   });
   const [locationLabel, setLocationLabel] = useState('');
   const [coordFormat, setCoordFormat] = useState<CoordinateFormat>('dd');
@@ -93,8 +102,6 @@ export function DetailDrawer({
   const [timestamps, setTimestamps] = useState<Record<string, TimestampRecord>>({});
 
   useEffect(() => {
-    if (!source) return;
-
     const location = readLocation(source.custom_metadata);
     setCoord(location ? { lat: location.lat, lon: location.lon } : null);
     setCoordText(location ? safeFormat(location.lat, location.lon, coordFormatRef.current) : '');
@@ -105,48 +112,45 @@ export function DetailDrawer({
   }, [source]);
 
   useEffect(() => {
-    if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  }, [onClose]);
 
-    // Load the stored timestamp for every attachment when the drawer opens, so
-    // an already-stamped item shows its real state instead of offering to stamp
-    // it again.
-    const attachmentIds = source?.attachments.map(a => a.id).join(',') ?? '';
+  // Load the stored timestamp for every attachment when the drawer opens, so
+  // an already-stamped item shows its real state instead of offering to stamp
+  // it again.
+  const attachmentIds = source.attachments.map(a => a.id).join(',');
 
-    useEffect(() => {
-      if (!isOpen || !attachmentIds) {
-        setTimestamps({});
-        return;
-      }
+  useEffect(() => {
+    if (!attachmentIds) {
+      setTimestamps({});
+      return;
+    }
 
-      let cancelled = false;
-      const ids = attachmentIds.split(',').filter(Boolean);
+    let cancelled = false;
+    const ids = attachmentIds.split(',').filter(Boolean);
 
-      void (async () => {
-        const loaded: Record<string, TimestampRecord> = {};
-        for (const id of ids) {
-          try {
-            const record = await getTimestampStatus(id);
-            if (record) loaded[id] = record;
-          } catch {
-            // A missing or unreadable status is not fatal; the attachment simply
-            // shows no timestamp.
-          }
+    void (async () => {
+      const loaded: Record<string, TimestampRecord> = {};
+      for (const id of ids) {
+        try {
+          const record = await getTimestampStatus(id);
+          if (record) loaded[id] = record;
+        } catch {
+          // A missing or unreadable status is not fatal; the attachment simply
+          // shows no timestamp.
         }
-        if (!cancelled) setTimestamps(loaded);
-      })();
+      }
+      if (!cancelled) setTimestamps(loaded);
+    })();
 
-      return () => {
-        cancelled = true;
-      };
-    }, [isOpen, attachmentIds, getTimestampStatus]);
-
-    if (!isOpen || !source) return null;
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentIds, getTimestampStatus]);
 
   /**
    * Switches notation and rewrites the field in place, so the value can be
@@ -220,11 +224,13 @@ export function DetailDrawer({
 
       await onUpdate(source.id, {
         ...values,
-        // Empty string / 0 clear the stored rating; the backend maps them to
+        // Empty strings / 0 clear the stored values; the backend maps them to
         // NULL. Sending `undefined` would leave the old value in place.
+        url: values.url ?? '',
+        rawText: values.rawText ?? '',
+        stance: values.stance ?? '',
         reliabilityCode: values.reliabilityCode ?? '',
         credibilityCode: values.credibilityCode ?? 0,
-        // Empty strings clear the stored values.
         sourceDate: values.sourceDate ?? '',
         sourceTime: values.sourceDate ? values.sourceTime ?? '' : '',
         customMetadata,

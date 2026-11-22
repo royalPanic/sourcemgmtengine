@@ -1176,11 +1176,7 @@ pub async fn timestamp_attachment(
     // only way to make the evidence usable again.
     let existing = get_timestamp_for_attachment(&app, &attachment_id).await?;
     if let Some(record) = &existing {
-        let app_config_dir = app
-            .path()
-            .app_config_dir()
-            .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-        let existing_proof_path = app_config_dir.join(Path::new(&record.ots_path));
+        let existing_proof_path = resolve_attachment_path(&app, &record.ots_path)?;
 
         match std::fs::read(&existing_proof_path) {
             Ok(bytes) => {
@@ -1232,12 +1228,7 @@ pub async fn verify_timestamp(
         .await?
         .ok_or_else(|| format!("No timestamp found for attachment: {attachment_id}"))?;
 
-    let app_config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Failed to get app config dir: {}", e))?;
-
-    let ots_absolute = app_config_dir.join(Path::new(&record.ots_path));
+    let ots_absolute = resolve_attachment_path(&app, &record.ots_path)?;
 
     if !ots_absolute.exists() {
         return Err("Timestamp proof file not found on disk".to_string());

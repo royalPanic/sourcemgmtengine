@@ -495,17 +495,26 @@ pub async fn propagate_rating(pool: &SqlitePool, reference_source_id: &str) -> R
     Ok(())
 }
 
-/// Copies an entity's reliability quality onto every source that cites it.
+/// Copies an entity's reliability quality onto every source that cites it, and
+/// transitively down any source-to-source citation chains rooted at those
+/// sources.
 ///
-/// Entities cite nothing themselves, so unlike source references this needs
-/// no chain walk. Only the reliability_code is updated; credibility and
-/// stance are left untouched because an entity's reliability quality is a
-/// single Admiralty code.
+/// Direct citations keep their own credibility and stance because an entity
+/// supplies only reliability and may express several viewpoints. Any sibling
+/// source that cites one of those sources then mirrors its updated rating via
+/// [`propagate_rating`].
 pub async fn propagate_entity_rating(pool: &SqlitePool, entity_id: &str) -> Result<(), String> {
     // A missing or blank value clears the previously inherited code.
     let reliability = entity_reliability(pool, entity_id)
         .await?
         .filter(|code| !code.is_empty());
+
+    let citing_ids: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM sources WHERE reference_entity_id = ?")
+            .bind(entity_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to list entity-citing sources: {}", e))?;
 
     let now = Utc::now().to_rfc3339();
     // The stance is deliberately untouched: an entity can express several
@@ -519,6 +528,10 @@ pub async fn propagate_entity_rating(pool: &SqlitePool, entity_id: &str) -> Resu
     .execute(pool)
     .await
     .map_err(|e| format!("Failed to propagate entity rating: {}", e))?;
+
+    for citing_id in &citing_ids {
+        propagate_rating(pool, citing_id).await?;
+    }
 
     Ok(())
 }

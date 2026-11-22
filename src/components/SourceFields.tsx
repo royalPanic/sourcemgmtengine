@@ -10,7 +10,7 @@ import {
   STANCE_NONE_LABEL,
 } from '../types';
 import { SourceDateTimeFields } from './SourceDateTimeFields';
-import { ReferenceSelect } from './ReferenceSelect';
+import { ReferenceSelect, referenceSupplies } from './ReferenceSelect';
 import type { SourceFormState } from './useSourceForm';
 
 interface SourceFieldsProps {
@@ -37,6 +37,10 @@ export function SourceFields({
   disabled = false,
   provenanceTitle = 'Provenance',
 }: SourceFieldsProps) {
+  const supplies = referenceSupplies(form.reference);
+  const reliabilityLocked = disabled || supplies.reliability;
+  const credibilityLocked = disabled || supplies.credibility;
+
   return (
     <>
       <div className="mb-4">
@@ -119,14 +123,25 @@ export function SourceFields({
         <h3 className="text-sm font-semibold text-zinc-200 mb-3">NATO Admiralty Rating</h3>
 
         <div className="mb-4">
-          <label className="block text-xs font-medium text-zinc-400 mb-1">
+          <label
+            htmlFor="source-reliability"
+            className="block text-xs font-medium text-zinc-400 mb-1"
+          >
             Source Reliability (A–F)
           </label>
           <select
+            id="source-reliability"
             value={form.reliabilityCode}
             onChange={(e) => form.setReliabilityCode(e.target.value)}
-            className="select"
-            disabled={disabled}
+            className="select disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={reliabilityLocked}
+            title={
+              supplies.reliability
+                ? 'Reliability is inherited from the referenced source or entity'
+                : form.reliabilityCode
+                  ? RELIABILITY_DEFINITIONS[form.reliabilityCode as keyof typeof RELIABILITY_DEFINITIONS].description
+                  : 'Source Reliability (A–F, NATO STANAG 2064)'
+            }
           >
             <option value="">Not rated</option>
             {RELIABILITY_CODES.map(code => (
@@ -135,7 +150,11 @@ export function SourceFields({
               </option>
             ))}
           </select>
-          {form.reliabilityCode && (
+          {supplies.reliability ? (
+            <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+              Inherited from the selected reference.
+            </p>
+          ) : form.reliabilityCode && (
             <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
               {RELIABILITY_DEFINITIONS[form.reliabilityCode as keyof typeof RELIABILITY_DEFINITIONS].description}
             </p>
@@ -153,8 +172,15 @@ export function SourceFields({
             id="source-credibility"
             value={form.credibilityCode}
             onChange={(e) => form.setCredibilityCode(e.target.value)}
-            className="select"
-            disabled={disabled}
+            className="select disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={credibilityLocked}
+            title={
+              supplies.credibility
+                ? 'Credibility is inherited from the referenced source'
+                : form.credibilityCode
+                  ? CREDIBILITY_DEFINITIONS[Number(form.credibilityCode) as keyof typeof CREDIBILITY_DEFINITIONS].description
+                  : 'Information Credibility (1–6, NATO STANAG 2064)'
+            }
           >
             <option value="">Not rated</option>
             {CREDIBILITY_CODES.map(code => (
@@ -163,7 +189,11 @@ export function SourceFields({
               </option>
             ))}
           </select>
-          {form.credibilityCode && (
+          {supplies.credibility ? (
+            <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
+              Inherited from the referenced source.
+            </p>
+          ) : form.credibilityCode && (
             <p className="mt-2 text-xs text-zinc-500 leading-relaxed">
               {CREDIBILITY_DEFINITIONS[Number(form.credibilityCode) as keyof typeof CREDIBILITY_DEFINITIONS].description}
             </p>

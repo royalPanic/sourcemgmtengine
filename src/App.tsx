@@ -118,6 +118,8 @@ function App() {
     await deleteCase(caseId);
     if (selectedCaseId === caseId) {
       setSelectedCaseId(null);
+      setDrawerOpen(false);
+      setDrawerSource(null);
     }
   };
 
@@ -141,6 +143,7 @@ function App() {
   }>) => {
     const updated = await updateEntity(id, params);
     setSelectedEntity(updated);
+    await reloadSourcesQuietly();
   };
 
   const handleDeleteEntity = async (id: string) => {
@@ -148,6 +151,7 @@ function App() {
     if (selectedEntity?.id === id) {
       setSelectedEntity(null);
     }
+    await reloadSourcesQuietly();
   };
 
   const handleCreateEntityType = async (params: {
