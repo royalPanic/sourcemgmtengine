@@ -49,10 +49,18 @@ use crate::database::attachment_path::resolve_attachment_path;
 /// and the reserved device basenames (`CON`, `NUL`, `COM1`, …) which cannot be
 /// created as files at all.
 pub(crate) fn sanitize_file_name(file_name: &str) -> String {
-    let base = Path::new(file_name)
-        .file_name()
-        .and_then(|n| n.to_str())
+    let base = file_name
+        .rsplit(['/', '\\'])
+        .find(|segment| !segment.is_empty())
         .unwrap_or("file");
+    let base = if base.len() >= 2
+        && base.as_bytes()[0].is_ascii_alphabetic()
+        && base.as_bytes()[1] == b':'
+    {
+        &base[2..]
+    } else {
+        base
+    };
 
     let cleaned: String = base
         .chars()
