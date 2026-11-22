@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import CodeBlock from '@tiptap/extension-code-block';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
@@ -36,6 +37,7 @@ export function CaseNotesEditor({ content, onSave, loading, saving }: CaseNotesE
         link: false,
         underline: false,
       }),
+      CodeBlock,
       Placeholder.configure({
         placeholder: 'Start writing case notes…',
       }),

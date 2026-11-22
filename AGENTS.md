@@ -9,8 +9,8 @@ This document establishes the architecture, design principles, and coding standa
 The **OSINT Case & Source Manager** is a modern, local-first Windows application built for managing intelligence cases, structured source evaluation, narrative case notes, and media evidence attachments.
 
 ### Core Intent
-* **Zero Third-Party Cloud Dependencies:** All database records, user notes, and media attachments must live entirely within local user directories.
-* **Granular Intelligence Evaluation:** Native integration of NATO Admiralty System ratings (Source Reliability A–F, Information Credibility 1–6) and expandable key-value metadata for specialized OSINT workflows.
+* **Local-First, Zero Cloud Dependencies:** All database records, user notes, and media attachments live entirely within local user directories. No background telemetry, sync, or cloud accounts exist; outbound network requests happen only when explicitly triggered by the user (Media Download via the `yt-dlp` sidecar, or OpenTimestamps proof stamping/verification).
+* **Granular Intelligence Evaluation:** Native integration of NATO Admiralty System ratings (Source Reliability A–F, Information Credibility 1–6), typed reusable entities with provenance-tracked qualities, and expandable key-value metadata for specialized OSINT workflows.
 * **Modern Desktop Aesthetic:** Responsive, high-contrast, dark-mode-first UI tailored for multi-monitor desktop analysis.
 
 ---
@@ -22,8 +22,8 @@ The **OSINT Case & Source Manager** is a modern, local-first Windows application
 | **Desktop Shell** | Tauri v2 (Rust backend) | Native OS integration, secure filesystem operations, SQLite bindings |
 | **Frontend Framework** | React 18+ (TypeScript) | Declarative UI, state management, component architecture |
 | **Styling** | Tailwind CSS | Utility-first styling, design system tokens, native dark mode |
-| **Data Layer** | SQLite (`tauri-plugin-sql` / `rusqlite`) | Local relational storage and transaction handling |
-| **Rich Text / Notes** | TipTap or Lexical | Markdown-compatible case note editor with local state syncing |
+| **Data Layer** | SQLite (`tauri-plugin-sql` / `sqlx`) | Local relational storage, versioned migrations (v1–v11), and transaction handling |
+| **Rich Text / Notes** | TipTap v3 | Rich text / Markdown-compatible case note editor with debounced auto-save |
 
 ---
 
@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS sources (
     -- NATO Admiralty Rating System
     reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
     credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+    stance TEXT CHECK (stance IN ('supports','refutes','neutral')),
+    source_date TEXT,
+    source_time TEXT,
+    reference_source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+    reference_entity_id TEXT REFERENCES entities(id) ON DELETE SET NULL,
     custom_metadata TEXT DEFAULT '{}', -- Valid JSON string for dynamic user fields
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -81,33 +86,84 @@ CREATE TABLE IF NOT EXISTS source_attachments (
     FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
 );
 
--- Global, reusable entities (people and organisations) that sources report on
-CREATE TABLE IF NOT EXISTS meta_sources (
+-- OpenTimestamps Cryptographic Proofs (1:1 per attachment)
+CREATE TABLE IF NOT EXISTS source_timestamp (
+    id TEXT PRIMARY KEY,
+    source_attachment_id TEXT NOT NULL UNIQUE,
+    ots_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at DATETIME,
+    block_height INTEGER,
+    block_time TEXT,
+    verification_notes TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (source_attachment_id) REFERENCES source_attachments(id) ON DELETE CASCADE
+);
+
+-- Editable Entity Type Templates (seeded from bundled JSON on first launch)
+CREATE TABLE IF NOT EXISTS entity_types (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'organization'
-        CHECK (kind IN ('person','organization','other')),
     description TEXT,
-    url TEXT,
-    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
-    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+    default_qualities TEXT NOT NULL DEFAULT '[]',
+    is_builtin INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Global or Case-Scoped Typed Entities (people, organizations, vehicles, etc.)
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    case_id TEXT REFERENCES cases(id) ON DELETE CASCADE,
+    is_global INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Typed Entity Qualities (including at most one 'reliability' quality per entity)
+CREATE TABLE IF NOT EXISTS entity_qualities (
+    id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    quality_name TEXT NOT NULL,
+    quality_type TEXT NOT NULL
+        CHECK (quality_type IN ('string','boolean','integer','date','coordinates','address','reliability')),
+    value_string TEXT,
+    value_integer INTEGER,
+    value_boolean INTEGER,
+    value_date TEXT,
+    value_coordinates TEXT,
+    value_address TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+);
+
+-- Optional Source Provenance Links for Entity Qualities
+CREATE TABLE IF NOT EXISTS quality_source_refs (
+    id TEXT PRIMARY KEY,
+    quality_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    reliability_code CHAR(1) CHECK (reliability_code IN ('A','B','C','D','E','F')),
+    credibility_code INT CHECK (credibility_code BETWEEN 1 AND 6),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (quality_id) REFERENCES entity_qualities(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
+);
 ```
 
-`cases` also carries `kind`, `event_date`, and `event_time`; `sources` also carries
-`stance`, `source_date`, `source_time`, `reference_source_id`, and
-`reference_meta_source_id` (added in migrations v2–v4).
+`cases` also carries `kind`, `event_date`, and `event_time`. The full migration chain (`src-tauri/src/database/migrations.rs`) spans v1–v11: `meta_sources` and `sources.reference_meta_source_id` were superseded by entities in v7 and dropped in v10, and editable `entity_types` were added in v11.
 
 #### Schema Rules for AI Agents
-- Never Hardcode Dynamic Metadata: Dynamic or expandable parameters (e.g., TLP ratings, coordinates, social handles) must be stored inside the custom_metadata JSON column.
+- Never Hardcode Dynamic Metadata: Dynamic or expandable parameters (e.g., TLP ratings, coordinates, social handles) must be stored inside the `custom_metadata` JSON column.
 
-- Cascading Deletes: Foreign keys must retain ON DELETE CASCADE so deleting a Case purges all related notes, sources, and media references.
+- Cascading Deletes: Foreign keys must retain `ON DELETE CASCADE` so deleting a Case purges all related notes, sources, case-scoped entities, and media references.
 
-- Reference Deletes Are SET NULL: `reference_source_id` and `reference_meta_source_id` use ON DELETE SET NULL. A citing source must survive its reference being deleted, keeping the rating it inherited; only the link is cleared.
+- Reference Deletes Are SET NULL: `reference_source_id` and `reference_entity_id` use `ON DELETE SET NULL`. A citing source must survive its reference being deleted, keeping the rating it inherited; only the link is cleared.
 
-- Relative File Paths: Store relative relative paths inside source_attachments.relative_path rather than absolute system paths to preserve workspace portability across machines.
+- Relative File Paths: Store relative paths inside `source_attachments.relative_path` and `source_timestamp.ots_path` rather than absolute system paths to preserve workspace portability across machines.
 
 ### OpenTimestamps Proofs
 The timestamping subsystem is in `src-tauri/src/opentimestamps/`. It is consensus-critical, so treat the
@@ -129,16 +185,18 @@ format as fixed rather than "cleanable".
 - **Proofs live at `<relative_path>.ots`.** The suffix keeps `photo.png` and `photo.jpg` from colliding.
   Deleting an attachment removes its proof; `record_timestamp` upserts so an unreadable proof can be replaced.
 
-### Meta Sources and Source References
-These two features are coupled; changing one means checking the other.
+### Entities, Entity Types, and Source References
+These features are coupled; changing one means checking the others.
 
-- A **meta source** is a person or organisation (news agency, official, spokesperson) that persists across all cases and events. It carries its own Admiralty rating.
+- **Entities & Entity Types:** An **entity** is a typed object (person, organization, government, nation, vehicle, or custom type) defined by a template in `entity_types`. Built-in types ship as JSON under `src-tauri/entity-types/` and are seeded on first launch (`is_builtin = 1`, editable but not deletable); operators can create, edit, and delete custom types in `EntityTypeDesigner`. Entities can be global (`is_global = 1, case_id = NULL`) or scoped to a single case (`is_global = 0, case_id = <case_id>`).
 
-- A **source reference** points at either a sibling source in the same container or a meta source — never both, never itself, never across containers. `commands/references.rs` owns this validation; SQLite triggers back it up.
+- **Entity Qualities & Provenance:** Each entity stores typed attributes (`string`, `boolean`, `integer`, `date`, `coordinates`, `address`, `reliability`) in `entity_qualities`, with optional source provenance in `quality_source_refs`. An entity may have at most one `reliability` quality (Admiralty A–F).
 
-- **Rating inheritance is live.** A citing source mirrors its reference's rating, and `propagate_rating` / `propagate_meta_rating` push changes down the chain. Any new write path that changes a rating must call them, or citations silently drift.
+- **Source References:** A source reference points at either a sibling source in the same case or an entity — never both, never itself, never across cases, and never in a cycle. `commands/references.rs` owns this validation; SQLite triggers back up the mutual-exclusivity invariant.
 
-- **Only a *source* reference locks the stance.** Citing a sibling source duplicates one piece of evidence, so the stance is forced to none and the source is excluded from every event dashboard statistic (`isReferenceLinked` in `utils/analytics.ts`). Citing a **meta source** keeps the stance editable and the source countable, because one entity (a wire service) can express several viewpoints across different captures. `ReferenceInput::locks_stance` and `locksStance` in `ReferenceSelect.tsx` are the shared predicates — use them rather than re-deriving the condition.
+- **Rating inheritance is live.** Citing a sibling source inherits both `reliability_code` and `credibility_code`. Citing an entity inherits only `reliability_code` (from the entity's `reliability` quality), keeping `credibility_code` independently editable per source. `propagate_rating` and `propagate_entity_rating` push changes down the entire citation graph (including source-to-source chains rooted at entity-citing sources). Any new write path that changes a source rating or an entity's reliability quality must call them, or citations silently drift.
+
+- **Only a *source* reference locks the stance.** Citing a sibling source duplicates one piece of evidence, so the stance is forced to none and the source is excluded from every case dashboard statistic (`isReferenceLinked` in `utils/analytics.ts`). Citing an **entity** keeps the stance editable and the source countable, because one entity (e.g., a wire service) can express several viewpoints across different captures. `ReferenceInput::locks_stance` (Rust) and `locksStance` / `referenceSupplies` in `ReferenceSelect.tsx` are the shared predicates — use them rather than re-deriving the conditions.
 
 ## 4. UI / UX Design System & Component Guidelines
 ### Dark Mode & Visual Styling
@@ -148,11 +206,11 @@ These two features are coupled; changing one means checking the other.
 
 - Component Layout Structure: Maintain a Master-Detail Layout:
 
-    - Sidebar: Fixed width (w-64), collapsing list of Cases, global search, and workspace settings.
+    - Sidebar: Fixed width (w-64), collapsing list of Cases, global search, and global Entities view toggle.
 
-    - Main Content Area: Split panel or tabbed view containing (1) Case Notes Editor and (2) Source Data Grid.
+    - Main Content Area: Tabbed view containing (1) Case Notes Editor, (2) Workspace (Sources Data Grid + Entities Panel & Type Designer), and (3) Analytics Dashboard (with Source Map).
 
-    - Detail Drawer: Slide-over modal or panel for inspecting individual Source parameters, Admiralty rating matrices, and media previews.
+    - Detail Drawers: Slide-over panels for inspecting/editing individual Sources (Admiralty ratings, provenance, coordinates, media previews, OpenTimestamps proofs) and Entities (qualities, provenance links).
 
 ## 5. Instructions for Coding Agents
 When editing or generating code for this repository:
